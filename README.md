@@ -6,6 +6,8 @@ A teleprompter that follows your voice. Open it in Google Chrome:
 1. Put each question on a line starting with `#` (a space after it is optional) and write your answer under it.
 2. Click **Start prompter** and allow the microphone.
 3. Read out loud: the current word turns yellow and the text scrolls with you.
+   Words to stress show in **bold** (numbers, strong words, the last new key word of each phrase), so it
+   doesn't sound flat. Turn it off in ⚙︎ → Stress hints.
 
 Keys: `Space` listen / pause · `1`–`9` pick an answer · `←` `→` previous / next answer ·
 `↑` `↓` back / forward a line · `R` restart · `+` `−` text size · `F` full screen · `E` edit.
