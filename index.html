@@ -369,12 +369,13 @@ function align(tail, seq, lo, hi, near){
       const up = prev[j] + GAP, left = cur[j-1] + GAP;
       if (up > v) v = up; if (left > v) v = left; if (v < 0) v = 0;
       cur[j] = v;
-      // only alignments that end on one of the last 2 spoken words, at a matched script word
-      if (i >= m - 1 && s > 0 && v === diag){
+      // only alignments that end on one of the last 2 spoken words, at a matched script word.
+      // A path ending in this match scores `diag`, even when a gap path ties with it (repeated phrases).
+      if (i >= m - 1 && s > 0){
         const end = lo + j - 1;
-        let adj = v;
+        let adj = diag;
         if (near != null){ const d = end - near; adj -= d >= -1 ? 0.03 * Math.max(0, d) : 0.25 * -d; }
-        if (!best || adj > best.adj) best = { score:v, adj, end };
+        if (!best || adj > best.adj) best = { score:diag, adj, end };
       }
     }
     [prev, cur] = [cur, prev];
@@ -412,18 +413,28 @@ function recordStruggle(i, type, opts = {}){
   const r = A.words[k] || (A.words[k] = { w:wordText(i), n:0, paused:0, skipped:0, misheard:0 });
   r[type] = (r[type] || 0) + 1; r.n += 1; r.last = Date.now();
   if (opts.as) r.as = opts.as;
+  if (opts.first) r.first = opts.first;
   if (run) run.tricky.add(k);
   if (opts.save !== false){ saveLearn(); paintTricky(); }
 }
-// called whenever the voice moves the position forward
+// a stop before word i is a natural one: after punctuation, at a new line, or at a <Pause> cue
+const naturalBreak = i => /[.,;:!?…)"”—–]$/.test(words[i - 1]?.el.textContent || '') || !!words[i]?.lineStart || !!words[i]?.afterCue;
+// the key word a fumble at i belongs to: i itself, or the next key word within 2 words
+const keyWordAt = i => { for (let k = i; k < Math.min(words.length, i + 3); k++) if (isContent(k)) return k; return -1; };
+// called whenever the voice moves the position forward; times the gap before each new word
 function noteProgress(oldPos, newPos){
-  lastMoveAt = Date.now();
+  const now = Date.now(), gap = now - lastMoveAt;
+  lastMoveAt = now;
   if (!S.learn || !hearing()) return;
-  if (!run) run = { aKey:aKeyOf(cur), from:oldPos, max:oldPos, t0:Date.now(), tLast:Date.now(), heard:new Map(), tricky:new Set(), stallAt:-1 };
-  run.max = Math.max(run.max, newPos); run.tLast = Date.now();
+  if (!run) run = { aKey:aKeyOf(cur), from:oldPos, max:oldPos, t0:now, tLast:now, heard:new Map(), tricky:new Set(), stallAt:-1,
+                    gaps:[], wrong:new Map(), restarts:new Set() };
+  else if (newPos > oldPos && oldPos > run.from) run.gaps.push({ i:oldPos, ms:gap });
+  run.max = Math.max(run.max, newPos); run.tLast = now;
 }
-// which script words the spoken words covered: exact (2), close but different (1), something else (0.5)
-function markHeard(tail, end){
+// which script words the spoken words covered: exact (2), close but different (1), something else (0.5).
+// A finished (final) spoken word that isn't in the script, said just before a script word, is remembered as
+// a possible "wrong word first" for that script word.
+function markHeard(tail, end, finalInTail = tail.length){
   if (!run) return;
   const seq = answers[cur].norms;
   const note = (j, q, as) => { const h = run.heard.get(j); if (!h || q > h.q) run.heard.set(j, { q, as }); };
@@ -436,35 +447,66 @@ function markHeard(tail, end){
     if (sim(t, s) > 0){ note(j, lev(t, s) <= 1 ? 2 : 1, t); i--; j--; continue; }
     const skipScript = j > 0 && sim(t, seq[j - 1]) > 0, extraSpoken = i > 0 && sim(tail[i - 1], s) > 0;
     if (skipScript && !extraSpoken){ j--; continue; }   // script word j was not heard
-    if (extraSpoken && !skipScript){ i--; continue; }   // an extra spoken word
+    if (extraSpoken && !skipScript){                     // an extra spoken word, said before script word j+1
+      if (i < finalInTail && t.length >= 3 && !SMALL.has(t) && j + 1 < seq.length && !run.wrong.has(j + 1)) run.wrong.set(j + 1, t);
+      i--; continue;
+    }
     note(j, 0.5, t); i--; j--;                           // heard something else in its place
   }
+}
+// restarting a phrase: the newest spoken words match words already said, 2–12 words back.
+// The fumble is on the key word they broke off before.
+let lastEnd = -1, lastTailKey = '';
+function noteRestart(tail, r){
+  const key = tail.join(' ');
+  if (key === lastTailKey) return;
+  lastTailKey = key;
+  if (!r || r.score < 3.2) return;
+  const back = lastEnd - r.end, seq = answers[cur].norms, m = tail.length;
+  if (run && S.learn && hearing() && lastEnd >= 0 && back >= 2 && back <= 12 && m >= 2
+      && tail[m - 1] === seq[r.end] && tail[m - 2] === seq[r.end - 1]){
+    const i = keyWordAt(lastEnd + 1);
+    if (i >= 0 && !run.restarts.has(i)){ run.restarts.add(i); recordStruggle(i, 'restarted'); }
+  }
+  lastEnd = r.end;
 }
 // a stop of PAUSE_MS in the middle of a sentence counts as a pause on the next key word
 setInterval(() => {
   if (!S.learn || !hearing() || !run || !words.length || pos >= words.length || pos <= run.from) return;
   if (Date.now() - lastMoveAt < PAUSE_MS || run.stallAt === pos) return;
   run.stallAt = pos;
-  if (/[.,;:!?…)"”—–]$/.test(words[pos - 1]?.el.textContent || '') || words[pos].lineStart || words[pos].afterCue) return; // a natural breath, or a <Pause> cue
-  let i = pos; while (i < Math.min(words.length, pos + 3) && !isContent(i)) i++;
-  if (i < words.length && isContent(i)) recordStruggle(i, 'paused');
+  if (naturalBreak(pos)) return;
+  const i = keyWordAt(pos);
+  if (i >= 0) recordStruggle(i, 'paused');
 }, 250);
-// end of a practice run: count skipped and unclear words, save the run
+// end of a practice run: count skipped, unclear and corrected words and short hesitations; save the run
 function finishRun(){
   const r = run; run = null;
   if (!r || r.aKey !== aKeyOf(cur) || r.max - r.from < 8) return;
   const end = Math.min(r.max, words.length);
   let gap = [];
-  const count = (i, type, as) => { recordStruggle(i, type, { save:false, as }); r.tricky.add(wordKeys[i]); };
+  const count = (i, type, opts = {}) => { recordStruggle(i, type, { ...opts, save:false }); r.tricky.add(wordKeys[i]); };
   const flush = () => { if (gap.length && gap.length <= 3) gap.forEach(i => count(i, 'skipped')); gap = []; }; // >3 in a row = jumped on purpose
   for (let i = r.from; i < end; i++){
     if (!isContent(i)) continue;
     const h = r.heard.get(i);
     if (!h){ gap.push(i); continue; }
     flush();
-    if (h.q < 2) count(i, 'misheard', h.as);
+    if (h.q < 2) count(i, 'misheard', { as:h.as });
   }
   flush();
+  // a wrong word first, then the right one: the script word was heard exactly in the end
+  for (const [j, said] of r.wrong){
+    if (j < r.from || j >= end || r.heard.get(j)?.q !== 2) continue;
+    const i = keyWordAt(j);
+    if (i >= 0) count(i, 'corrected', { first:said });
+  }
+  // short hesitations: well over this person's usual gap between words, but under a full pause
+  const gaps = r.gaps.filter(g => g.ms < PAUSE_MS && !naturalBreak(g.i));
+  const sorted = gaps.map(g => g.ms).sort((a, b) => a - b), median = sorted[Math.floor(sorted.length / 2)] || 0;
+  const bar = Math.max(1300, median * 2.5);
+  const hes = new Set();
+  for (const g of gaps) if (g.ms >= bar){ const i = keyWordAt(g.i); if (i >= 0 && !hes.has(i)){ hes.add(i); count(i, 'hesitated'); } }
   const A = learnFor(r.aKey);
   A.runs.unshift({ at:r.t0, ms:Math.max(0, r.tLast - r.t0), words:end - r.from, tricky:r.tricky.size, done:end >= words.length });
   A.runs = A.runs.slice(0, 30);
@@ -495,7 +537,7 @@ function setLearn(on){
   if (!!S.learn === on) return;
   if (!on) finishRun();
   S.learn = on; saveSettings(); updateLearnUI();
-  toast(on ? 'Learning mode: words you pause on, skip or say unclearly get marked' : 'Interview mode', 2600);
+  toast(on ? 'Learning mode: words you stumble on get marked (pauses, hesitations, restarts, wrong words, skips)' : 'Interview mode', 2600);
 }
 const hideTricky = () => $('#tricky').classList.add('hidden');
 function when(t){
@@ -507,6 +549,9 @@ function when(t){
 function why(r){
   const x = c => c > 1 ? ` ×${c}` : '', parts = [];
   if (r.paused) parts.push('paused' + x(r.paused));
+  if (r.hesitated) parts.push('hesitated' + x(r.hesitated));
+  if (r.restarted) parts.push('restarted the phrase' + x(r.restarted));
+  if (r.corrected) parts.push((r.first ? `said “${r.first}” first` : 'corrected a wrong word') + x(r.corrected));
   if (r.skipped) parts.push('skipped' + x(r.skipped));
   if (r.misheard) parts.push((r.as ? `heard as “${r.as}”` : 'unclear') + x(r.misheard));
   if (r.marked) parts.push('marked by you');
@@ -529,7 +574,7 @@ function renderTricky(){
   const A = learn.answers[aKeyOf(cur)] || { words:{}, runs:[] };
   add('div', 'th', `Tricky words · ${cur + 1}. ${a.title}`);
   const recs = Object.entries(A.words).filter(([, r]) => isTricky(r)).sort((x, y) => (y[1].n - x[1].n) || ((y[1].last || 0) - (x[1].last || 0)));
-  if (!recs.length) add('div', 'tnote', 'None yet. Read this answer aloud in Learning mode: words you pause on, skip, or that come out unclear show up here. Double-click any word to mark it yourself.');
+  if (!recs.length) add('div', 'tnote', 'None yet. Read this answer aloud in Learning mode: words you pause or hesitate on, restart before, say wrong and correct, skip, or that come out unclear show up here. Double-click any word to mark it yourself.');
   for (const [k, r] of recs){
     const b = add('button', 'trow');
     const w = document.createElement('span'); w.className = 'tw'; w.textContent = r.w;
@@ -890,10 +935,12 @@ textEl.addEventListener('pointermove', e => {
 textEl.addEventListener('contextmenu', e => { if (e.target.closest('.w')) e.preventDefault(); });
 
 /* ---------- following the voice ---------- */
-function follow(tail){
+// tail = the last few spoken words; finalInTail = how many of them the recognizer has finished (the rest may still change)
+function follow(tail, finalInTail = tail.length){
   if (!words.length || !tail.length) return;
   const seq = answers[cur].norms, n = seq.length;
   let r = align(tail, seq, Math.max(0, pos - 30), Math.min(n, pos + 80), pos);
+  noteRestart(tail, r);   // Learning mode: did they go back and say a phrase again?
   let ok = false;
   if (r){
     const d = r.end - pos;
@@ -905,7 +952,7 @@ function follow(tail){
   }
   if (ok){
     if (r.end + 1 !== pos) noteProgress(pos, r.end + 1);
-    markHeard(tail, r.end);
+    markHeard(tail, r.end, finalInTail);
     if (r.end + 1 !== pos) setPos(r.end + 1);
     if (run && pos >= words.length) finishRun();   // read to the end of the answer
   }
@@ -928,6 +975,7 @@ function startListening(gesture = false){
   }
   if (listening || !words.length) return;
   listening = true; carry = []; errDelay = 120; lastMoveAt = Date.now(); everHeard = false; byGesture = gesture;
+  lastEnd = -1; lastTailKey = '';
   startRec(); updateRunUI(); startTimer();
 }
 function startRec(){
@@ -946,7 +994,8 @@ function startRec(){
     r._last = base.slice(-12);
     const raw = (fin + ' ' + interim).trim();
     heardEl.textContent = S.showHeard && raw ? '🎙 ' + raw.split(/\s+/).slice(-16).join(' ') : '';
-    follow(base.concat(toWords(interim)).slice(-10));
+    const iw = toWords(interim), tail = base.concat(iw).slice(-10);
+    follow(tail, Math.max(0, tail.length - iw.length));   // the interim words at the end may still change
   };
   r.onerror = e => {
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
@@ -985,7 +1034,7 @@ function stopListening(){
 }
 // forget what was heard (after a manual jump), so old words can't pull the position back
 function resetHearing(){
-  carry = [];
+  carry = []; lastEnd = -1; lastTailKey = '';
   if (listening && rec){ rec._last = []; const r = rec; try { r.abort(); } catch {} }
 }
 

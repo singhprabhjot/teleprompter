@@ -11,7 +11,8 @@ A teleprompter that follows your voice. Open it in Google Chrome on a Mac, or Sa
    Text in angle brackets, like `<Pause>` or `<Wait>`, shows in red as a cue; you don't say it.
 
 **Learning mode** (the Interview / Learning switch, or `L`): while you practise out loud, words you pause on
-mid-sentence, skip, or that come out unclear get an orange wavy underline with a count. Double-click a word to mark
+mid-sentence, hesitate on (1.3–2.5 s), restart a phrase before, say wrong and then correct, skip, or that come out
+unclear get an orange wavy underline with a count. Double-click a word to mark
 it yourself (on iPad: press and hold; again to clear it). **Tricky words** lists them with the reason, plus your practice runs. It is all
 saved in this browser, so it is kept when you reload.
 
