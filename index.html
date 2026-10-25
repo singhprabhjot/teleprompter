@@ -823,7 +823,7 @@ textEl.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse') return;
   const w = e.target.closest('.w'); if (!w) return;
   const p = { x:e.clientX, y:e.clientY, done:false };
-  p.t = setTimeout(() => { p.done = true; toggleMark(+w.dataset.i); navigator.vibrate?.(15); }, 550);
+  p.t = setTimeout(() => { p.done = true; toggleMark(+w.dataset.i); }, 550);
   press = p;
 });
 textEl.addEventListener('pointermove', e => {
