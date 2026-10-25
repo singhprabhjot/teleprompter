@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teleprompter</title>
+<style>
+:root{
+  --bg:#0e0f11; --panel:#17191c; --line:#2a2d32; --text:#f4f4f2; --dim:#5a5e66; --muted:#9aa0a8;
+  --accent:#ffd54a; --live:#f87171;
+  --fs:38px; --w:900px; --lh:1.5; --readline:24vh;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;}
+button,select,input,textarea{font:inherit;color:inherit}
+.hidden{display:none !important}
+button{background:#23262b;border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer;line-height:1.2}
+button:hover{background:#2c3036}
+button.primary{background:var(--accent);color:#1a1400;border-color:transparent;font-weight:650}
+button.primary:hover{filter:brightness(1.05)}
+button:disabled{opacity:.45;cursor:default}
+.spacer{flex:1}
+.view{position:fixed;inset:0}
+
+/* ---------- Edit view ---------- */
+#edit{display:flex;flex-direction:column}
+.ebar{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:700;font-size:17px}
+.brand small{font-weight:400;color:var(--muted);margin-left:8px;font-size:13px}
+.ewrap{flex:1;display:flex;min-height:0}
+.ecol{flex:1;display:flex;flex-direction:column;padding:16px 20px;min-width:0}
+.hint{color:var(--muted);font-size:14px;margin-bottom:10px;line-height:1.5}
+.hint code{background:#23262b;padding:1px 6px;border-radius:5px;color:var(--text)}
+#script{flex:1;width:100%;resize:none;background:#121417;border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;font-size:17px;line-height:1.6;outline:none}
+#script:focus{border-color:#454a52}
+.elist{width:320px;border-left:1px solid var(--line);padding:16px;overflow:auto}
+.elist h3{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.elist ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.elist li button{width:100%;text-align:left;display:flex;gap:10px;align-items:flex-start;padding:9px 10px}
+.elist .num{color:var(--accent);font-weight:700;min-width:1.2em}
+.elist .t{flex:1;min-width:0}
+.elist .meta{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.elist .empty{color:var(--muted);font-size:14px}
+@media (max-width:760px){.ewrap{flex-direction:column}.elist{width:auto;border-left:0;border-top:1px solid var(--line);max-height:35vh}}
+
+/* ---------- Prompter view ---------- */
+.pbar{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;gap:8px;padding:8px 12px 18px;
+  background:linear-gradient(var(--bg) 65%,transparent);transition:opacity .3s}
+body.live .pbar{opacity:.16}
+body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
+.tabs{display:flex;gap:6px;overflow-x:auto;min-width:0;flex:1;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis;font-size:13px;padding:5px 10px;flex:none}
+.tab.on{background:var(--accent);color:#1a1400;border-color:transparent;font-weight:600}
+.timer{font-variant-numeric:tabular-nums;color:var(--muted);font-size:14px;min-width:3.2em;text-align:right}
+.mic{min-width:9.5em}
+.mic.on{border-color:var(--live);color:#ffd6d6}
+.mic.on::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--live);margin-right:7px;vertical-align:1px;animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+.stage{position:fixed;inset:0;overflow-y:auto;padding:var(--readline) 0 85vh;scrollbar-width:none}
+.stage::-webkit-scrollbar{display:none}
+.text{max-width:var(--w);margin:0 auto;padding:0 28px;font-size:var(--fs);line-height:var(--lh);font-weight:500}
+.text.mirror{transform:scaleX(-1)}
+.q{font-size:.46em;color:var(--muted);margin-bottom:.7em;font-weight:600;line-height:1.35}
+.text p{margin:0 0 .2em}
+.text p.gap{height:.4em;margin:0}
+.w{cursor:pointer;border-radius:4px;transition:color .15s}
+.w:hover{background:#ffffff14}
+.w.read{color:var(--dim)}
+.w.cur{color:var(--accent);text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:7px}
+.end{margin-top:1.2em;font-size:.5em;color:var(--muted);border-top:1px solid var(--line);padding-top:.8em}
+.end b{color:var(--text)}
+.readline{position:fixed;left:0;right:0;top:calc(var(--readline) + var(--fs) * var(--lh) / 2);height:0;pointer-events:none;z-index:2}
+.readline::before,.readline::after{content:"";position:absolute;top:-9px;border:9px solid transparent;opacity:.55}
+.readline::before{left:4px;border-left-color:var(--accent)}
+.readline::after{right:4px;border-right-color:var(--accent)}
+
+.heard{position:fixed;left:0;right:0;bottom:0;z-index:4;padding:22px 16px 10px;font-size:13px;color:var(--muted);
+  text-align:center;background:linear-gradient(transparent,var(--bg) 60%);pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.heard:empty{display:none}
+
+.settings{position:fixed;top:52px;right:12px;z-index:7;width:340px;max-width:calc(100vw - 24px);max-height:calc(100vh - 70px);overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:0 12px 40px #0009;font-size:14px}
+.settings .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0}
+.settings .row label{color:var(--muted)}
+.settings input[type=range]{width:150px;accent-color:var(--accent)}
+.settings select{background:#23262b;border:1px solid var(--line);border-radius:7px;padding:5px 8px}
+.settings input[type=checkbox]{accent-color:var(--accent);width:17px;height:17px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:6px 10px;font-size:13px}
+.seg button.on{background:var(--accent);color:#1a1400;font-weight:600}
+.settings hr{border:0;border-top:1px solid var(--line);margin:8px 0}
+.keys{color:var(--muted);font-size:13px;line-height:1.75}
+.keys kbd{background:#23262b;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 6px;color:var(--text);font-family:inherit;font-size:12px}
+
+.toast{position:fixed;top:58px;left:50%;transform:translateX(-50%);z-index:8;background:#2b2f35;border:1px solid #3a3f46;
+  padding:9px 14px;border-radius:10px;font-size:14px;max-width:min(560px,calc(100vw - 32px));text-align:center;box-shadow:0 8px 30px #0008}
+.notice{max-width:var(--w);margin:0 auto;padding:0 28px;color:var(--muted);font-size:20px}
+</style>
+</head>
+<body>
+
+<!-- ============ EDIT ============ -->
+<section id="edit" class="view">
+  <header class="ebar">
+    <div class="brand">Teleprompter <small>follows your voice</small></div>
+    <div class="spacer"></div>
+    <button id="startBtn" class="primary" title="Ctrl/⌘ + Enter">Start prompter ▶</button>
+  </header>
+  <div class="ewrap">
+    <div class="ecol">
+      <div class="hint">Put each question on a line starting with <code># </code> and write your answer under it.
+        Your text saves itself in this browser. In the prompter, press <code>1</code>–<code>9</code> to jump to an answer.</div>
+      <textarea id="script" spellcheck="true" placeholder="# Tell me about yourself&#10;Your answer…"></textarea>
+    </div>
+    <aside class="elist">
+      <h3>Answers</h3>
+      <ol id="answerList"></ol>
+    </aside>
+  </div>
+</section>
+
+<!-- ============ PROMPTER ============ -->
+<section id="prompt" class="view hidden">
+  <div id="stage" class="stage"><div id="text" class="text"></div></div>
+  <div class="readline"></div>
+  <header id="pbar" class="pbar">
+    <button id="editBtn" title="Edit answers (E)">✎ Edit</button>
+    <div id="tabs" class="tabs"></div>
+    <span id="timer" class="timer">0:00</span>
+    <button id="micBtn" class="mic">🎙 Listen</button>
+    <button id="popBtn" title="Open in a small window you can put under the camera">⧉</button>
+    <button id="setBtn" title="Settings">⚙︎</button>
+  </header>
+  <div id="settings" class="settings hidden">
+    <div class="row"><label>Mode</label>
+      <div class="seg" id="modeSeg"><button data-mode="voice">Follow my voice</button><button data-mode="auto">Auto scroll</button></div></div>
+    <div class="row" id="speedRow"><label for="speed">Scroll speed</label><input id="speed" type="range" min="8" max="160" step="2"></div>
+    <div class="row"><label for="fs">Text size</label><input id="fs" type="range" min="18" max="90" step="1"></div>
+    <div class="row"><label for="w">Column width</label><input id="w" type="range" min="360" max="1700" step="10"></div>
+    <div class="row"><label for="rl">Reading line</label><input id="rl" type="range" min="6" max="60" step="1"></div>
+    <div class="row"><label for="lang">Language</label>
+      <select id="lang">
+        <option value="en-US">English (US)</option>
+        <option value="en-IN">English (India)</option>
+        <option value="en-GB">English (UK)</option>
+        <option value="en-CA">English (Canada)</option>
+        <option value="en-AU">English (Australia)</option>
+      </select></div>
+    <div class="row"><label for="autoFind">Jump to the answer I start saying</label><input id="autoFind" type="checkbox"></div>
+    <div class="row"><label for="showHeard">Show what it hears</label><input id="showHeard" type="checkbox"></div>
+    <div class="row"><label for="mirror">Mirror text</label><input id="mirror" type="checkbox"></div>
+    <hr>
+    <div class="keys">
+      <kbd>Space</kbd> listen / pause &nbsp; <kbd>1</kbd>–<kbd>9</kbd> pick answer<br>
+      <kbd>←</kbd> <kbd>→</kbd> previous / next answer<br>
+      <kbd>↑</kbd> <kbd>↓</kbd> back / forward a line (speed in auto mode)<br>
+      <kbd>R</kbd> back to the start &nbsp; <kbd>+</kbd> <kbd>−</kbd> text size<br>
+      <kbd>F</kbd> full screen &nbsp; <kbd>E</kbd> edit &nbsp; click a word to jump there
+    </div>
+  </div>
+  <footer id="heard" class="heard"></footer>
+</section>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+
+/* ---------- storage (never throws) ---------- */
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('tp.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v){ try { localStorage.setItem('tp.' + k, JSON.stringify(v)); } catch {} }
+};
+
+const SAMPLE = `# Tell me about yourself
+Hi, I'm Alex. I'm a software engineer with six years of experience building web applications.
+Right now I lead a small team that ships features for thousands of customers every week.
+
+What I enjoy most is turning a messy problem into something simple that people actually use.
+
+# Why do you want to work here?
+I've followed your product for a while, and I like how much you care about the people who use it.
+This role lines up with what I do best, and it's the kind of work I want to keep growing in.
+
+# Tell me about a challenge you solved
+Last year our main page was taking eight seconds to load, and customers were leaving.
+I measured where the time went, fixed the three slowest parts, and brought it under two seconds.
+`;
+
+const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false };
+let S = Object.assign({}, DEFAULTS, store.get('settings', {}));
+const saveSettings = () => store.set('settings', S);
+
+/* ---------- words ---------- */
+const NUM = {zero:'0',one:'1',two:'2',three:'3',four:'4',five:'5',six:'6',seven:'7',eight:'8',nine:'9',ten:'10',
+  eleven:'11',twelve:'12',thirteen:'13',fourteen:'14',fifteen:'15',sixteen:'16',seventeen:'17',eighteen:'18',nineteen:'19',
+  twenty:'20',thirty:'30',forty:'40',fifty:'50',sixty:'60',seventy:'70',eighty:'80',ninety:'90',hundred:'100',
+  first:'1st',second:'2nd',third:'3rd',okay:'ok'};
+function norm(w){
+  const s = w.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'')
+    .replace(/['’`]/g,'').replace(/&/g,'and').replace(/[^a-z0-9]/g,'');
+  return NUM[s] || s;
+}
+// One tokenizer for both the page and the matcher, so word i on screen == word i in the matcher.
+function tokenizeLine(line){
+  const out = [];
+  for (const part of line.split(/(\s+)/)){
+    if (!part) continue;
+    if (/^\s+$/.test(part)){ out.push({ t:' ', n:'' }); continue; }
+    for (const piece of part.split(/(?<=[-–—\/])/)) out.push({ t:piece, n:norm(piece) });
+  }
+  return out;
+}
+const toWords = t => t.split(/[\s\-–—\/]+/).map(norm).filter(Boolean);
+
+function parse(text){
+  const out = []; let cur = null;
+  for (const ln of text.replace(/\r/g,'').split('\n')){
+    const m = ln.match(/^\s*#{1,3}\s+(.*)$/);
+    if (m){ cur = { title:m[1].trim() || 'Untitled', lines:[] }; out.push(cur); continue; }
+    if (!cur){ if (!ln.trim()) continue; cur = { title:'Notes', lines:[] }; out.push(cur); }
+    cur.lines.push(ln);
+  }
+  return out.map(a => {
+    const body = a.lines.join('\n').replace(/^\s*\n/, '').replace(/\s+$/, '');
+    const norms = [];
+    for (const line of body.split('\n')) for (const p of tokenizeLine(line)) if (p.n) norms.push(p.n);
+    return { title:a.title, body, norms, titleNorms:toWords(a.title) };
+  }).filter(a => a.norms.length || a.title);
+}
+
+/* ---------- matching: local alignment of the last spoken words against the script ---------- */
+function lev(a, b){
+  const m = a.length, n = b.length; let prev = new Array(n + 1), cur = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++){
+    cur[0] = i;
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    [prev, cur] = [cur, prev];
+  }
+  return prev[n];
+}
+const simCache = new Map();
+function sim(a, b){
+  if (a === b) return 2;
+  const key = a < b ? a + '|' + b : b + '|' + a;
+  let v = simCache.get(key);
+  if (v !== undefined) return v;
+  const la = a.length, lb = b.length;
+  v = -1;
+  if (la >= 3 && lb >= 3 && (a.startsWith(b) || b.startsWith(a))) v = 1.2;
+  else if (la >= 4 && lb >= 4 && Math.abs(la - lb) <= 2 && lev(a, b) <= (Math.max(la, lb) >= 8 ? 2 : 1)) v = 1.2;
+  if (simCache.size > 20000) simCache.clear();
+  simCache.set(key, v);
+  return v;
+}
+const GAP = -0.8;
+// Returns the best place in seq[lo..hi) where the spoken tail ends.
+// `near` = the current position; candidates far from it are penalised (null = no penalty).
+function align(tail, seq, lo, hi, near){
+  const m = tail.length, n = hi - lo;
+  if (!m || n <= 0) return null;
+  let prev = new Float32Array(n + 1), cur = new Float32Array(n + 1);
+  let best = null;
+  for (let i = 1; i <= m; i++){
+    cur[0] = 0;
+    for (let j = 1; j <= n; j++){
+      const s = sim(tail[i-1], seq[lo + j - 1]);
+      const diag = prev[j-1] + s;
+      let v = diag;
+      const up = prev[j] + GAP, left = cur[j-1] + GAP;
+      if (up > v) v = up; if (left > v) v = left; if (v < 0) v = 0;
+      cur[j] = v;
+      // only alignments that end on one of the last 2 spoken words, at a matched script word
+      if (i >= m - 1 && s > 0 && v === diag){
+        const end = lo + j - 1;
+        let adj = v;
+        if (near != null){ const d = end - near; adj -= d >= -1 ? 0.03 * Math.max(0, d) : 0.25 * -d; }
+        if (!best || adj > best.adj) best = { score:v, adj, end };
+      }
+    }
+    [prev, cur] = [cur, prev];
+  }
+  return best;
+}
+
+/* ---------- state ---------- */
+let answers = [], cur = 0, words = [], pos = 0, endEl = null;
+const textEl = $('#text'), stage = $('#stage');
+
+/* ---------- edit view ---------- */
+const scriptEl = $('#script');
+let scriptText = store.get('script', null);
+if (scriptText == null) scriptText = SAMPLE;
+scriptEl.value = scriptText;
+
+function renderList(){
+  answers = parse(scriptEl.value);
+  const ol = $('#answerList'); ol.innerHTML = '';
+  if (!answers.length){ ol.innerHTML = '<li class="empty">Nothing yet — add a line like “# Tell me about yourself”.</li>'; }
+  answers.forEach((a, k) => {
+    const li = document.createElement('li'), b = document.createElement('button');
+    const mins = a.norms.length / 140;
+    b.innerHTML = `<span class="num">${k + 1}</span><span class="t"></span>`;
+    b.querySelector('.t').textContent = a.title;
+    const meta = document.createElement('span'); meta.className = 'meta';
+    meta.textContent = `${a.norms.length} words · about ${mins < 1 ? Math.max(10, Math.round(mins * 60 / 5) * 5) + ' sec' : mins.toFixed(1) + ' min'}`;
+    b.querySelector('.t').appendChild(meta);
+    b.onclick = () => openPrompter(k);
+    li.appendChild(b); ol.appendChild(li);
+  });
+  $('#startBtn').disabled = !answers.length;
+}
+let saveT = 0;
+scriptEl.addEventListener('input', () => {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => { store.set('script', scriptEl.value); renderList(); }, 250);
+});
+scriptEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)){ e.preventDefault(); openPrompter(store.get('cur', 0)); }
+});
+$('#startBtn').onclick = () => openPrompter(store.get('cur', 0));
+
+function showEdit(){
+  stopAll();
+  $('#prompt').classList.add('hidden'); $('#edit').classList.remove('hidden');
+  hideSettings();
+  if (location.hash) history.replaceState(history.state, '', location.pathname + location.search);
+  scriptEl.focus();
+}
+
+/* ---------- prompter view ---------- */
+function openPrompter(k){
+  store.set('script', scriptEl.value);
+  answers = parse(scriptEl.value);
+  $('#edit').classList.add('hidden'); $('#prompt').classList.remove('hidden');
+  if (location.hash !== '#prompt') history.replaceState(history.state, '', '#prompt');
+  applySettings();
+  renderTabs();
+  if (!answers.length){
+    textEl.innerHTML = '<div class="notice">No answers yet. Press <b>E</b> to write some.</div>';
+    words = []; return;
+  }
+  switchAnswer(Math.min(Math.max(0, k | 0), answers.length - 1));
+  if (S.mode === 'voice' && SR) startListening();
+}
+
+function renderTabs(){
+  const tabs = $('#tabs'); tabs.innerHTML = '';
+  answers.forEach((a, k) => {
+    const b = document.createElement('button');
+    b.className = 'tab' + (k === cur ? ' on' : '');
+    b.textContent = `${k + 1}. ${a.title}`;
+    b.title = a.title;
+    b.onclick = () => switchAnswer(k);
+    tabs.appendChild(b);
+  });
+}
+
+function switchAnswer(k, opts = {}){
+  if (!answers[k]) return;
+  cur = k; store.set('cur', k);
+  [...$('#tabs').children].forEach((b, i) => b.classList.toggle('on', i === k));
+  $('#tabs').children[k]?.scrollIntoView({ block:'nearest', inline:'nearest' });
+  renderAnswer();
+  pos = 0; paintAll();
+  stage.scrollTop = 0; scrollTarget = 0;
+  resetTimer();
+  if (!opts.keepHearing) resetHearing();
+}
+
+function renderAnswer(){
+  const a = answers[cur];
+  textEl.innerHTML = ''; words = [];
+  const q = document.createElement('div'); q.className = 'q'; q.textContent = `${cur + 1}. ${a.title}`;
+  textEl.appendChild(q);
+  for (const line of a.body.split('\n')){
+    const p = document.createElement('p');
+    if (!line.trim()){ p.className = 'gap'; textEl.appendChild(p); continue; }
+    for (const tok of tokenizeLine(line)){
+      if (!tok.n){ p.appendChild(document.createTextNode(tok.t)); continue; }
+      const s = document.createElement('span');
+      s.className = 'w'; s.textContent = tok.t; s.dataset.i = words.length;
+      words.push({ n:tok.n, el:s }); p.appendChild(s);
+    }
+    textEl.appendChild(p);
+  }
+  endEl = document.createElement('div'); endEl.className = 'end';
+  const next = answers[cur + 1];
+  endEl.innerHTML = next ? 'End of answer. Next (→): <b></b>' : 'End of answer.';
+  if (next) endEl.querySelector('b').textContent = next.title;
+  textEl.appendChild(endEl);
+}
+
+function paint(i){ const w = words[i]; if (!w) return; w.el.classList.toggle('read', i < pos); w.el.classList.toggle('cur', i === pos); }
+function paintAll(){ for (let i = 0; i < words.length; i++) paint(i); }
+function setPos(p, opts = {}){
+  if (!words.length) return;
+  p = Math.max(0, Math.min(words.length, p));
+  const old = pos; pos = p;
+  const lo = Math.min(old, p), hi = Math.max(old, p);
+  for (let i = Math.max(0, lo - 1); i <= Math.min(words.length - 1, hi + 1); i++) paint(i);
+  if (S.mode === 'voice' || opts.scroll) scrollToPos(opts.instant);
+}
+
+/* ---------- smooth scrolling to keep the current line on the reading line ---------- */
+let scrollTarget = 0, animating = false, manualUntil = 0;
+function targetY(){
+  const el = pos < words.length ? words[pos]?.el : endEl;
+  if (!el) return 0;
+  const y = el.getBoundingClientRect().top - stage.getBoundingClientRect().top + stage.scrollTop;
+  return Math.max(0, y - (S.rl / 100) * stage.clientHeight);
+}
+function scrollToPos(instant){
+  scrollTarget = targetY();
+  if (instant){ stage.scrollTop = scrollTarget; return; }
+  if (!animating){ animating = true; requestAnimationFrame(stepScroll); }
+}
+function stepScroll(){
+  if (Date.now() < manualUntil){ animating = false; return; }
+  const y = stage.scrollTop, d = scrollTarget - y;
+  if (Math.abs(d) < 1){ animating = false; return; }
+  stage.scrollTop = y + Math.sign(d) * Math.max(1, Math.abs(d) * 0.12);
+  if (stage.scrollTop === y){ animating = false; return; } // hit the end
+  requestAnimationFrame(stepScroll);
+}
+stage.addEventListener('wheel', () => { manualUntil = Date.now() + 1500; }, { passive:true });
+stage.addEventListener('touchmove', () => { manualUntil = Date.now() + 1500; }, { passive:true });
+textEl.addEventListener('click', e => {
+  const w = e.target.closest('.w'); if (!w) return;
+  manualUntil = 0; setPos(+w.dataset.i, { scroll:true });
+  if (S.mode === 'voice') resetHearing();
+});
+window.addEventListener('resize', () => { if (words.length && S.mode === 'voice') scrollToPos(true); });
+
+/* ---------- following the voice ---------- */
+function follow(tail){
+  if (!words.length || !tail.length) return;
+  const seq = answers[cur].norms, n = seq.length;
+  let r = align(tail, seq, Math.max(0, pos - 30), Math.min(n, pos + 80), pos);
+  let ok = false;
+  if (r){
+    const d = r.end - pos;
+    ok = r.score >= 3.2 && !(d > 12 && r.score < 6) && !(d < -2 && r.score < 7);
+  }
+  if (!ok){ // maybe they skipped far ahead in this answer
+    const r2 = align(tail, seq, 0, n, pos);
+    if (r2 && r2.score >= 7){ r = r2; ok = true; }
+  }
+  if (ok){ if (r.end + 1 !== pos) setPos(r.end + 1); return; }
+  if (S.autoFind && answers.length > 1 && (!r || r.score < 2.5)) globalFind(tail);
+}
+function globalFind(tail){
+  let best = null, second = 0;
+  answers.forEach((a, k) => {
+    if (k === cur) return;
+    const seq = a.titleNorms.concat(a.norms);
+    const r = align(tail, seq, 0, seq.length, null);
+    if (!r) return;
+    if (!best || r.score > best.score){ second = best ? best.score : second; best = { ...r, k, tl:a.titleNorms.length }; }
+    else if (r.score > second) second = r.score;
+  });
+  if (best && best.score >= 8 && best.score - second >= 2){
+    switchAnswer(best.k, { keepHearing:true });
+    setPos(Math.max(0, best.end - best.tl + 1), { instant:true });
+    toast('Switched to: ' + answers[best.k].title);
+  }
+}
+
+/* ---------- speech recognition (Chrome) ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, carry = [], restartT = 0, errDelay = 120;
+const heardEl = $('#heard');
+
+function startListening(){
+  if (!SR){ toast('Voice follow needs Google Chrome. Switched to Auto scroll.'); setMode('auto'); return; }
+  if (listening || !words.length) return;
+  listening = true; carry = []; errDelay = 120;
+  startRec(); updateRunUI(); startTimer();
+}
+function startRec(){
+  const r = new SR(); rec = r;
+  r.lang = S.lang; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+  r._last = carry.slice();
+  r.onresult = e => {
+    if (r !== rec) return;
+    errDelay = 120;
+    let fin = '', interim = '';
+    for (let i = 0; i < e.results.length; i++){
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) fin += ' ' + t; else interim += ' ' + t;
+    }
+    const base = carry.concat(toWords(fin));
+    r._last = base.slice(-12);
+    const raw = (fin + ' ' + interim).trim();
+    heardEl.textContent = S.showHeard && raw ? '🎙 ' + raw.split(/\s+/).slice(-16).join(' ') : '';
+    follow(base.concat(toWords(interim)).slice(-10));
+  };
+  r.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      stopListening();
+      toast('Microphone is blocked. Click the icon at the left of the address bar → allow Microphone, then press Space.', 9000);
+    } else if (e.error === 'audio-capture'){
+      stopListening(); toast('No microphone found. Check System Settings → Sound → Input.', 8000);
+    } else if (e.error === 'network'){
+      errDelay = 1500; toast('Voice follow needs the internet (Chrome sends the audio to Google). Retrying…', 5000);
+    } else if (e.error === 'language-not-supported'){
+      stopListening(); toast('That language is not available. Pick another in ⚙︎.', 7000);
+    }
+    // 'no-speech' and 'aborted' are normal: onend restarts it
+  };
+  r.onend = () => {
+    if (r !== rec) return;
+    carry = (r._last || []).slice(-10);
+    if (listening){ clearTimeout(restartT); restartT = setTimeout(() => { if (listening && r === rec) startRec(); }, errDelay); }
+  };
+  try { r.start(); } catch (err) { /* already running */ }
+}
+function stopListening(){
+  if (!listening) return;
+  listening = false; clearTimeout(restartT);
+  const r = rec; rec = null;
+  try { r && r.stop(); } catch {}
+  heardEl.textContent = '';
+  updateRunUI(); pauseTimer();
+}
+// forget what was heard (after a manual jump), so old words can't pull the position back
+function resetHearing(){
+  carry = [];
+  if (listening && rec){ rec._last = []; const r = rec; try { r.abort(); } catch {} }
+}
+
+/* ---------- auto scroll ---------- */
+let autoOn = false, lastT = 0, acc = 0;
+function startAuto(){ if (autoOn) return; autoOn = true; lastT = 0; acc = 0; requestAnimationFrame(autoStep); updateRunUI(); startTimer(); }
+function stopAuto(){ if (!autoOn) return; autoOn = false; updateRunUI(); pauseTimer(); }
+function autoStep(t){
+  if (!autoOn) return;
+  const dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0; lastT = t;
+  if (Date.now() >= manualUntil){
+    acc += S.speed * dt;
+    const whole = Math.floor(acc);
+    if (whole){ stage.scrollTop += whole; acc -= whole; }
+  }
+  requestAnimationFrame(autoStep);
+}
+
+function toggleRun(){
+  if (S.mode === 'voice') listening ? stopListening() : startListening();
+  else autoOn ? stopAuto() : startAuto();
+}
+function stopAll(){ stopListening(); stopAuto(); }
+function updateRunUI(){
+  const b = $('#micBtn'), on = listening || autoOn;
+  b.classList.toggle('on', on);
+  if (S.mode === 'voice') b.textContent = listening ? 'Listening' : '🎙 Listen';
+  else b.textContent = autoOn ? 'Scrolling' : '▶ Scroll';
+  b.title = 'Space';
+  document.body.classList.toggle('live', on);
+}
+$('#micBtn').onclick = toggleRun;
+
+/* ---------- timer ---------- */
+let tStart = 0, tAcc = 0, tTick = 0;
+function fmt(ms){ const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function drawTimer(){ $('#timer').textContent = fmt(tAcc + (tStart ? Date.now() - tStart : 0)); }
+function startTimer(){ if (!tStart){ tStart = Date.now(); clearInterval(tTick); tTick = setInterval(drawTimer, 500); } }
+function pauseTimer(){ if (tStart){ tAcc += Date.now() - tStart; tStart = 0; } clearInterval(tTick); drawTimer(); }
+function resetTimer(){ tAcc = 0; tStart = (listening || autoOn) ? Date.now() : 0; drawTimer(); }
+
+/* ---------- settings ---------- */
+function applySettings(){
+  const r = document.documentElement.style;
+  r.setProperty('--fs', S.fs + 'px'); r.setProperty('--w', S.w + 'px'); r.setProperty('--readline', S.rl + 'vh');
+  textEl.classList.toggle('mirror', !!S.mirror);
+  $('#speed').value = S.speed; $('#fs').value = S.fs; $('#w').value = S.w; $('#rl').value = S.rl;
+  $('#lang').value = S.lang; $('#autoFind').checked = !!S.autoFind; $('#showHeard').checked = !!S.showHeard; $('#mirror').checked = !!S.mirror;
+  [...$('#modeSeg').children].forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
+  $('#speedRow').style.display = S.mode === 'auto' ? '' : 'none';
+  if (!S.showHeard) heardEl.textContent = '';
+  updateRunUI();
+  if (words.length && S.mode === 'voice') requestAnimationFrame(() => scrollToPos(true));
+}
+function setMode(m){
+  if (S.mode === m) return;
+  stopAll(); S.mode = m; saveSettings(); applySettings();
+  if (m === 'voice'){ paintAll(); scrollToPos(); }
+}
+$('#modeSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setMode(b.dataset.mode); });
+const bindRange = (id, key) => $(id).addEventListener('input', e => { S[key] = +e.target.value; saveSettings(); applySettings(); });
+bindRange('#speed', 'speed'); bindRange('#fs', 'fs'); bindRange('#w', 'w'); bindRange('#rl', 'rl');
+['autoFind', 'showHeard', 'mirror'].forEach(k => $('#' + k).addEventListener('change', e => { S[k] = e.target.checked; saveSettings(); applySettings(); }));
+$('#lang').addEventListener('change', e => {
+  S.lang = e.target.value; saveSettings();
+  if (listening){ stopListening(); setTimeout(startListening, 250); }
+});
+const hideSettings = () => $('#settings').classList.add('hidden');
+$('#setBtn').onclick = () => $('#settings').classList.toggle('hidden');
+document.addEventListener('mousedown', e => {
+  if (!e.target.closest('#settings') && !e.target.closest('#setBtn')) hideSettings();
+});
+$('#editBtn').onclick = showEdit;
+$('#popBtn').onclick = () => {
+  const w = Math.min(1000, screen.availWidth), h = Math.round(Math.min(460, screen.availHeight * 0.45));
+  const left = Math.round((screen.availWidth - w) / 2 + (screen.availLeft || 0));
+  const win = window.open(location.pathname + '#prompt', 'teleprompter', `popup=yes,width=${w},height=${h},left=${left},top=0`);
+  if (win){ stopAll(); toast('Opened in its own window. Drag it right under your camera.'); }
+  else toast('The browser blocked the pop-up window. Allow pop-ups for this page and try again.');
+};
+
+/* ---------- keyboard ---------- */
+document.addEventListener('keydown', e => {
+  if ($('#prompt').classList.contains('hidden')) return;
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') { if (e.key === 'Escape') { e.target.blur(); hideSettings(); } return; }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (k === ' '){ e.preventDefault(); toggleRun(); }
+  else if (k === 'ArrowRight' || k === 'PageDown'){ e.preventDefault(); switchAnswer(Math.min(cur + 1, answers.length - 1)); }
+  else if (k === 'ArrowLeft' || k === 'PageUp'){ e.preventDefault(); switchAnswer(Math.max(cur - 1, 0)); }
+  else if (k === 'ArrowDown' || k === 'ArrowUp'){
+    e.preventDefault();
+    const dir = k === 'ArrowDown' ? 1 : -1;
+    if (S.mode === 'auto'){ S.speed = Math.max(8, Math.min(160, S.speed + dir * 6)); saveSettings(); applySettings(); toast('Speed ' + S.speed, 900); }
+    else { manualUntil = 0; setPos(lineStep(dir)); resetHearing(); }
+  }
+  else if (/^[1-9]$/.test(k)){ const i = +k - 1; if (answers[i]) switchAnswer(i); }
+  else if (k === 'r' || k === 'R' || k === 'Home'){ manualUntil = 0; setPos(0, { scroll:true }); stage.scrollTop = 0; resetHearing(); resetTimer(); }
+  else if (k === '+' || k === '='){ S.fs = Math.min(90, S.fs + 3); saveSettings(); applySettings(); }
+  else if (k === '-' || k === '_'){ S.fs = Math.max(18, S.fs - 3); saveSettings(); applySettings(); }
+  else if (k === 'f' || k === 'F'){ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.(); }
+  else if (k === 'e' || k === 'E'){ showEdit(); }
+  else if (k === 'Escape'){ hideSettings(); }
+});
+function lineStep(dir){
+  if (!words.length) return 0;
+  const i0 = Math.min(pos, words.length - 1), top = words[i0].el.offsetTop;
+  if (dir > 0){
+    for (let i = i0 + 1; i < words.length; i++) if (words[i].el.offsetTop > top + 2) return i;
+    return words.length;
+  }
+  let i = i0 - 1;
+  while (i >= 0 && words[i].el.offsetTop >= top - 2) i--;      // to the line above
+  if (i < 0) return 0;
+  const prevTop = words[i].el.offsetTop;
+  while (i > 0 && words[i - 1].el.offsetTop >= prevTop - 2) i--; // its first word
+  return i;
+}
+// stop buttons keeping focus, so Space never "clicks" them a second time
+document.addEventListener('click', e => { const b = e.target.closest('button'); if (b) b.blur(); });
+
+/* ---------- live edits from another window ---------- */
+window.addEventListener('storage', e => {
+  if (e.key !== 'tp.script' || $('#prompt').classList.contains('hidden')) return;
+  try { scriptEl.value = JSON.parse(e.newValue) ?? ''; } catch { return; }
+  answers = parse(scriptEl.value); renderTabs();
+  if (answers.length) switchAnswer(Math.min(cur, answers.length - 1));
+});
+
+/* ---------- toast ---------- */
+let toastT = 0;
+function toast(msg, ms = 3200){
+  const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hidden'), ms);
+}
+
+/* ---------- start ---------- */
+applySettings();
+renderList();
+if (location.hash === '#prompt') openPrompter(store.get('cur', 0));
+else scriptEl.focus();
+if (!SR) setTimeout(() => toast('Open this page in Google Chrome so it can follow your voice.', 7000), 400);
+
+// test hook: tp.say("words you would speak") feeds the matcher as if heard
+window.tp = {
+  say(text){ follow(toWords(text).slice(-10)); return { answer:cur, pos, of:words.length }; },
+  state(){ return { answer:cur, pos, of:words.length, scrollTop:stage.scrollTop, target:scrollTarget }; }
+};
+})();
+</script>
+</body>
+</html>
