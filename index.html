@@ -84,6 +84,32 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
 .w.stress.read{color:var(--dim)}
 .w.stress.cur{color:var(--accent)}
 .pb.stress{font-weight:800}
+.text{-webkit-user-select:none;user-select:none}
+.cue{color:#f87171;font-weight:700}
+.w.tricky{text-decoration:underline wavy #f0997b;text-decoration-thickness:2px;text-underline-offset:8px}
+.w.tricky.read{text-decoration-color:rgba(240,153,123,.45)}
+.w.tricky.cur{text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:3px}
+.tc{font-size:.36em;color:#f0997b;font-weight:700;vertical-align:super;margin-left:.1em;pointer-events:none}
+#learnSeg{flex:none}
+#learnSeg button{padding:5px 10px}
+#learnSeg button.on[data-learn="1"]{background:#f0997b;color:#4a1b0c}
+#trickyBtn{border-color:#f0997b;color:#f5c4b3;white-space:nowrap}
+.tpanel .th{font-weight:650;margin-bottom:8px;line-height:1.35}
+.tpanel .sub{color:var(--muted);font-size:13px;margin:14px 0 2px}
+.trow{width:100%;display:flex;justify-content:space-between;gap:12px;text-align:left;background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;padding:8px 2px}
+.trow:hover{background:#ffffff0d}
+.trow .tw{font-weight:650;color:#f5c4b3}
+.trow .ty{color:var(--muted);font-size:13px;text-align:right}
+.rrow{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:7px 2px;font-size:13px}
+.rrow span:last-child{color:var(--muted);text-align:right}
+.tbtns{display:flex;gap:8px;margin-top:12px}
+.tnote{color:var(--muted);font-size:12px;margin-top:10px;line-height:1.5}
+@media (max-width:820px){
+  .pbar{flex-wrap:wrap;row-gap:6px}
+  .tabs{order:10;flex-basis:100%}
+  .timer,#popBtn{display:none}
+  .mic{min-width:0}
+}
 .end{margin-top:1.2em;font-size:.5em;color:var(--muted);border-top:1px solid var(--line);padding-top:.8em}
 .end b{color:var(--text)}
 .readline{position:fixed;left:0;right:0;top:calc(var(--readline) + var(--fs) * var(--lh) / 2);height:0;pointer-events:none;z-index:2}
@@ -127,7 +153,8 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
     <div class="ecol">
       <div class="hint">Put each question on a line starting with <code>#</code> and write your answer under it.
         Your text saves itself in this browser. In the prompter, press <code>1</code>–<code>9</code> to jump to an answer.
-        Words you make <b>bold</b> in your Google Doc show bold in the prompter (typing <code>**word**</code> here does the same).</div>
+        Words you make <b>bold</b> in your Google Doc show bold in the prompter (typing <code>**word**</code> here does the same).
+        Put a cue in angle brackets, like <code>&lt;Pause&gt;</code> or <code>&lt;Wait&gt;</code>, and it shows in <span style="color:#f87171;font-weight:700">red</span>; you don't say it.</div>
       <div class="docrow">
         <input id="docUrl" type="url" spellcheck="false" placeholder="Or paste a Google Doc link to load your answers from it">
         <button id="docLoad">Load</button>
@@ -149,8 +176,10 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
   <div class="readline"></div>
   <header id="pbar" class="pbar">
     <button id="editBtn" title="Edit answers (E)">✎ Edit</button>
+    <div class="seg" id="learnSeg" title="Learning mode marks the words you struggle with (L)"><button data-learn="0">Interview</button><button data-learn="1">Learning</button></div>
     <div id="tabs" class="tabs"></div>
     <span id="timer" class="timer">0:00</span>
+    <button id="trickyBtn" class="hidden" title="Words you struggled with, and your practice runs">Tricky words</button>
     <button id="micBtn" class="mic">🎙 Listen</button>
     <button id="popBtn" title="Open in a small window you can put under the camera">⧉</button>
     <button id="setBtn" title="Settings">⚙︎</button>
@@ -181,9 +210,11 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
       <kbd>←</kbd> <kbd>→</kbd> previous / next answer<br>
       <kbd>↑</kbd> <kbd>↓</kbd> back / forward a line (speed in auto mode)<br>
       <kbd>R</kbd> back to the start &nbsp; <kbd>+</kbd> <kbd>−</kbd> text size<br>
-      <kbd>F</kbd> full screen &nbsp; <kbd>E</kbd> edit &nbsp; click a word to jump there
+      <kbd>F</kbd> full screen &nbsp; <kbd>E</kbd> edit &nbsp; click a word to jump there<br>
+      <kbd>L</kbd> learning mode &nbsp; double-click a word to mark it tricky (again to clear)
     </div>
   </div>
+  <div id="tricky" class="settings tpanel hidden"></div>
   <footer id="heard" class="heard"></footer>
 </section>
 
@@ -217,7 +248,7 @@ I measured where the time went, fixed the three slowest parts, and brought it un
 
 // The Google Doc the answers come from unless this browser was unlinked from it.
 const DEFAULT_DOC = 'https://docs.google.com/document/d/1JQ85zXCVrGll95KLjLDxMi7M3-8vQ7iOInH2y_k5b10/edit';
-const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false, docUrl:DEFAULT_DOC, docUnlinked:false, stress:'on' };
+const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false, docUrl:DEFAULT_DOC, docUnlinked:false, stress:'on', learn:false };
 let S = Object.assign({}, DEFAULTS, store.get('settings', {}));
 if (!S.docUrl && !S.docUnlinked) S.docUrl = DEFAULT_DOC;
 const saveSettings = () => store.set('settings', S);
@@ -234,13 +265,18 @@ function norm(w){
 }
 // One tokenizer for both the page and the matcher, so word i on screen == word i in the matcher.
 // **text** marks bold (from the Google Doc's bold, or typed); b = the piece is bold.
+// <Pause>, <Wait>…: a cue for the reader, shown in red and never expected to be said (cue = true, no n).
 function tokenizeLine(line){
   const out = [];
   const push = (seg, b) => {
-    for (const part of seg.replace(/\*+/g, '').split(/(\s+)/)){
-      if (!part) continue;
-      if (/^\s+$/.test(part)){ out.push({ t:' ', n:'', b }); continue; }
-      for (const piece of part.split(/(?<=[-–—\/])/)) out.push({ t:piece, n:norm(piece), b });
+    for (const chunk of seg.replace(/\*+/g, '').split(/(<[^<>]{1,40}>)/)){
+      if (!chunk) continue;
+      if (/^<[^<>]+>$/.test(chunk)){ out.push({ t:chunk, n:'', b, cue:true }); continue; }
+      for (const part of chunk.split(/(\s+)/)){
+        if (!part) continue;
+        if (/^\s+$/.test(part)){ out.push({ t:' ', n:'', b }); continue; }
+        for (const piece of part.split(/(?<=[-–—\/])/)) out.push({ t:piece, n:norm(piece), b });
+      }
     }
   };
   const re = /\*\*(.+?)\*\*/g; let last = 0, m;
@@ -324,6 +360,177 @@ function align(tail, seq, lo, hi, near){
 
 /* ---------- bold: words you made bold in your Google Doc show bold here ---------- */
 function applyStress(){ const on = S.stress !== 'off'; for (const el of boldEls) el.classList.toggle('stress', on); }
+
+/* ---------- Learning mode: remember the words you struggle with ---------- */
+// Saved in this browser under tp.learn, so it survives reloads:
+// { answers: { <answer title>: { words: { <prev|word|next>: {w,n,paused,skipped,misheard,as,marked,last} }, runs: [...] } } }
+// A word is keyed by itself and its neighbours, so editing other parts of the doc keeps the marks in place.
+const SMALL = wordSet(`a an the and or but nor so yet of to in on at for with from by as into onto about over under after before
+  while than then that this these those which who whom what when where why how is are was were be been being am do does did
+  have has had will would shall should can could may might must i me my mine we us our you your he him his she her it its they
+  them their there here also just very too im ive id ill thats theres weve youre theyre lets`);
+function wordSet(s){ return new Set(s.split(/\s+/)); }
+const PAUSE_MS = 2500;
+let learn = store.get('learn', null) || { answers:{} };
+if (!learn.answers) learn = { answers:{} };
+let run = null, lastMoveAt = 0, wordKeys = [], trickyCount = 0, fakeHearing = false;
+const saveLearn = () => store.set('learn', learn);
+const aKeyOf = k => (answers[k]?.titleNorms || []).join(' ') || 'untitled';
+const learnFor = k => learn.answers[k] || (learn.answers[k] = { words:{}, runs:[] });
+const hearing = () => listening || fakeHearing;
+const isContent = i => { const n = words[i]?.n || ''; return /\d/.test(n) || (n.length >= 3 && !SMALL.has(n)); };
+const wordText = i => (words[i]?.el.textContent || '').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+const isTricky = r => !!r && (r.n > 0 || !!r.marked);
+
+function recordStruggle(i, type, opts = {}){
+  const A = learnFor(run ? run.aKey : aKeyOf(cur)), k = wordKeys[i];
+  if (!k) return;
+  const r = A.words[k] || (A.words[k] = { w:wordText(i), n:0, paused:0, skipped:0, misheard:0 });
+  r[type] = (r[type] || 0) + 1; r.n += 1; r.last = Date.now();
+  if (opts.as) r.as = opts.as;
+  if (run) run.tricky.add(k);
+  if (opts.save !== false){ saveLearn(); paintTricky(); }
+}
+// called whenever the voice moves the position forward
+function noteProgress(oldPos, newPos){
+  lastMoveAt = Date.now();
+  if (!S.learn || !hearing()) return;
+  if (!run) run = { aKey:aKeyOf(cur), from:oldPos, max:oldPos, t0:Date.now(), tLast:Date.now(), heard:new Map(), tricky:new Set(), stallAt:-1 };
+  run.max = Math.max(run.max, newPos); run.tLast = Date.now();
+}
+// which script words the spoken words covered: exact (2), close but different (1), something else (0.5)
+function markHeard(tail, end){
+  if (!run) return;
+  const seq = answers[cur].norms;
+  const note = (j, q, as) => { const h = run.heard.get(j); if (!h || q > h.q) run.heard.set(j, { q, as }); };
+  let i = tail.length - 1, j = end, steps = 0;
+  while (i >= 0 && j >= 0 && j >= run.from - 1 && steps++ < 30){
+    const t = tail[i], s = seq[j];
+    if (t === s){ note(j, 2); i--; j--; continue; }
+    if (i > 0 && tail[i - 1] + t === s){ note(j, 2); i -= 2; j--; continue; }                 // "blue jay" for "Bluejay"
+    if (j > 0 && seq[j - 1] + s === t){ note(j, 2); note(j - 1, 2); i--; j -= 2; continue; }  // "fullstack" for "full-stack"
+    if (sim(t, s) > 0){ note(j, lev(t, s) <= 1 ? 2 : 1, t); i--; j--; continue; }
+    const skipScript = j > 0 && sim(t, seq[j - 1]) > 0, extraSpoken = i > 0 && sim(tail[i - 1], s) > 0;
+    if (skipScript && !extraSpoken){ j--; continue; }   // script word j was not heard
+    if (extraSpoken && !skipScript){ i--; continue; }   // an extra spoken word
+    note(j, 0.5, t); i--; j--;                           // heard something else in its place
+  }
+}
+// a stop of PAUSE_MS in the middle of a sentence counts as a pause on the next key word
+setInterval(() => {
+  if (!S.learn || !hearing() || !run || !words.length || pos >= words.length || pos <= run.from) return;
+  if (Date.now() - lastMoveAt < PAUSE_MS || run.stallAt === pos) return;
+  run.stallAt = pos;
+  if (/[.,;:!?…)"”—–]$/.test(words[pos - 1]?.el.textContent || '') || words[pos].lineStart || words[pos].afterCue) return; // a natural breath, or a <Pause> cue
+  let i = pos; while (i < Math.min(words.length, pos + 3) && !isContent(i)) i++;
+  if (i < words.length && isContent(i)) recordStruggle(i, 'paused');
+}, 250);
+// end of a practice run: count skipped and unclear words, save the run
+function finishRun(){
+  const r = run; run = null;
+  if (!r || r.aKey !== aKeyOf(cur) || r.max - r.from < 8) return;
+  const end = Math.min(r.max, words.length);
+  let gap = [];
+  const count = (i, type, as) => { recordStruggle(i, type, { save:false, as }); r.tricky.add(wordKeys[i]); };
+  const flush = () => { if (gap.length && gap.length <= 3) gap.forEach(i => count(i, 'skipped')); gap = []; }; // >3 in a row = jumped on purpose
+  for (let i = r.from; i < end; i++){
+    if (!isContent(i)) continue;
+    const h = r.heard.get(i);
+    if (!h){ gap.push(i); continue; }
+    flush();
+    if (h.q < 2) count(i, 'misheard', h.as);
+  }
+  flush();
+  const A = learnFor(r.aKey);
+  A.runs.unshift({ at:r.t0, ms:Math.max(0, r.tLast - r.t0), words:end - r.from, tricky:r.tricky.size, done:end >= words.length });
+  A.runs = A.runs.slice(0, 30);
+  saveLearn(); paintTricky();
+  toast(`Practice run saved · ${r.tricky.size} tricky word${r.tricky.size === 1 ? '' : 's'}`, 2500);
+}
+// underline + count on every tricky word of the answer on screen
+function paintTricky(){
+  textEl.querySelectorAll('.tc').forEach(e => e.remove());
+  const A = learn.answers[aKeyOf(cur)];
+  let n = 0;
+  words.forEach((w, i) => {
+    const r = A && A.words[wordKeys[i]], on = isTricky(r);
+    w.el.classList.toggle('tricky', on);
+    if (!on) return;
+    n++;
+    if (r.n > 0){ const b = document.createElement('sup'); b.className = 'tc'; b.textContent = r.n; w.el.after(b); }
+  });
+  trickyCount = n; updateLearnUI();
+}
+function updateLearnUI(){
+  [...$('#learnSeg').children].forEach(b => b.classList.toggle('on', (b.dataset.learn === '1') === !!S.learn));
+  const tb = $('#trickyBtn');
+  tb.classList.toggle('hidden', !S.learn);
+  tb.textContent = (innerWidth < 820 ? 'Tricky' : 'Tricky words') + (trickyCount ? ` (${trickyCount})` : '');
+}
+function setLearn(on){
+  if (!!S.learn === on) return;
+  if (!on) finishRun();
+  S.learn = on; saveSettings(); updateLearnUI();
+  toast(on ? 'Learning mode: words you pause on, skip or say unclearly get marked' : 'Interview mode', 2600);
+}
+const hideTricky = () => $('#tricky').classList.add('hidden');
+function when(t){
+  const d = new Date(t), now = new Date(), time = d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = (day(now) - day(d)) / 864e5;
+  return diff === 0 ? `Today ${time}` : diff === 1 ? `Yesterday ${time}` : `${d.toLocaleDateString([], { month:'short', day:'numeric' })}, ${time}`;
+}
+function why(r){
+  const x = c => c > 1 ? ` ×${c}` : '', parts = [];
+  if (r.paused) parts.push('paused' + x(r.paused));
+  if (r.skipped) parts.push('skipped' + x(r.skipped));
+  if (r.misheard) parts.push((r.as ? `heard as “${r.as}”` : 'unclear') + x(r.misheard));
+  if (r.marked) parts.push('marked by you');
+  return (r.n ? `${r.n} time${r.n === 1 ? '' : 's'}: ` : '') + parts.join(', ');
+}
+function clearButton(label, onYes){
+  const b = document.createElement('button'); b.textContent = label;
+  let armed = false, t = 0;
+  b.onclick = () => {
+    if (!armed){ armed = true; b.textContent = 'Click again to clear'; t = setTimeout(() => { armed = false; b.textContent = label; }, 3000); return; }
+    clearTimeout(t); onYes();
+  };
+  return b;
+}
+function renderTricky(){
+  const el = $('#tricky'), a = answers[cur];
+  el.innerHTML = '';
+  if (!a) return;
+  const add = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; el.appendChild(e); return e; };
+  const A = learn.answers[aKeyOf(cur)] || { words:{}, runs:[] };
+  add('div', 'th', `Tricky words · ${cur + 1}. ${a.title}`);
+  const recs = Object.entries(A.words).filter(([, r]) => isTricky(r)).sort((x, y) => (y[1].n - x[1].n) || ((y[1].last || 0) - (x[1].last || 0)));
+  if (!recs.length) add('div', 'tnote', 'None yet. Read this answer aloud in Learning mode: words you pause on, skip, or that come out unclear show up here. Double-click any word to mark it yourself.');
+  for (const [k, r] of recs){
+    const b = add('button', 'trow');
+    const w = document.createElement('span'); w.className = 'tw'; w.textContent = r.w;
+    const y = document.createElement('span'); y.className = 'ty'; y.textContent = why(r);
+    b.append(w, y);
+    b.title = 'Go to this word';
+    b.onclick = () => { const i = wordKeys.indexOf(k); if (i >= 0){ manualUntil = 0; setPos(i, { scroll:true }); resetHearing(); } hideTricky(); };
+  }
+  if (A.runs.length){
+    add('div', 'sub', 'Practice runs');
+    for (const r of A.runs.slice(0, 10)){
+      const row = add('div', 'rrow');
+      const l = document.createElement('span'); l.textContent = when(r.at);
+      const rr = document.createElement('span');
+      rr.textContent = `${fmt(r.ms)} · ${r.tricky} tricky word${r.tricky === 1 ? '' : 's'}${r.done ? '' : ' · stopped early'}`;
+      row.append(l, rr);
+    }
+  }
+  const btns = add('div', 'tbtns');
+  btns.append(
+    clearButton('Clear this answer', () => { delete learn.answers[aKeyOf(cur)]; saveLearn(); paintTricky(); renderTricky(); toast('Cleared this answer’s history', 1800); }),
+    clearButton('Clear all', () => { learn = { answers:{} }; saveLearn(); paintTricky(); renderTricky(); toast('Cleared all history', 1800); })
+  );
+  add('div', 'tnote', 'Saved in this browser, so it’s kept when you reload. Click a word to jump to it.');
+}
 
 /* ---------- state ---------- */
 let answers = [], cur = 0, words = [], pos = 0, endEl = null, boldEls = [];
@@ -503,6 +710,8 @@ function renderTabs(){
 
 function switchAnswer(k, opts = {}){
   if (!answers[k]) return;
+  finishRun();
+  hideTricky();
   cur = k; store.set('cur', k);
   [...$('#tabs').children].forEach((b, i) => b.classList.toggle('on', i === k));
   $('#tabs').children[k]?.scrollIntoView({ block:'nearest', inline:'nearest' });
@@ -521,7 +730,9 @@ function renderAnswer(){
   for (const line of a.body.split('\n')){
     const p = document.createElement('p');
     if (!line.trim()){ p.className = 'gap'; textEl.appendChild(p); continue; }
+    let first = true, afterCue = false;
     for (const tok of tokenizeLine(line)){
+      if (tok.cue){ const c = document.createElement('span'); c.className = 'cue'; c.textContent = tok.t; p.appendChild(c); afterCue = true; continue; }
       if (!tok.n){
         if (tok.b && tok.t.trim()){ // punctuation inside bold
           const b = document.createElement('span'); b.className = 'pb'; b.textContent = tok.t; boldEls.push(b); p.appendChild(b);
@@ -530,18 +741,20 @@ function renderAnswer(){
       }
       const s = document.createElement('span');
       s.className = 'w'; s.textContent = tok.t; s.dataset.i = words.length;
-      words.push({ n:tok.n, el:s });
+      words.push({ n:tok.n, el:s, lineStart:first, afterCue }); first = false; afterCue = false;
       if (tok.b) boldEls.push(s);
       p.appendChild(s);
     }
     textEl.appendChild(p);
   }
+  wordKeys = words.map((w, i) => `${words[i - 1]?.n || '^'}|${w.n}|${words[i + 1]?.n || '$'}`);
   applyStress();
   endEl = document.createElement('div'); endEl.className = 'end';
   const next = answers[cur + 1];
   endEl.innerHTML = next ? 'End of answer. Next (→): <b></b>' : 'End of answer.';
   if (next) endEl.querySelector('b').textContent = next.title;
   textEl.appendChild(endEl);
+  paintTricky();
 }
 
 function paint(i){ const w = words[i]; if (!w) return; w.el.classList.toggle('read', i < pos); w.el.classList.toggle('cur', i === pos); }
@@ -550,6 +763,7 @@ function setPos(p, opts = {}){
   if (!words.length) return;
   p = Math.max(0, Math.min(words.length, p));
   const old = pos; pos = p;
+  if (p !== old) lastMoveAt = Date.now();
   const lo = Math.min(old, p), hi = Math.max(old, p);
   for (let i = Math.max(0, lo - 1); i <= Math.min(words.length - 1, hi + 1); i++) paint(i);
   if (S.mode === 'voice' || opts.scroll) scrollToPos(opts.instant);
@@ -584,6 +798,16 @@ textEl.addEventListener('click', e => {
   if (S.mode === 'voice') resetHearing();
 });
 window.addEventListener('resize', () => { if (words.length && S.mode === 'voice') scrollToPos(true); });
+// double-click a word: mark it tricky, or clear it if it already is
+textEl.addEventListener('dblclick', e => {
+  const w = e.target.closest('.w'); if (!w) return;
+  e.preventDefault(); window.getSelection()?.removeAllRanges();
+  const i = +w.dataset.i, A = learnFor(aKeyOf(cur)), k = wordKeys[i];
+  if (isTricky(A.words[k])){ delete A.words[k]; toast(`Cleared “${wordText(i)}”`, 1500); }
+  else { A.words[k] = { w:wordText(i), n:0, paused:0, skipped:0, misheard:0, marked:true, last:Date.now() }; toast(`Marked “${wordText(i)}” as tricky`, 1500); }
+  saveLearn(); paintTricky();
+  if (!$('#tricky').classList.contains('hidden')) renderTricky();
+});
 
 /* ---------- following the voice ---------- */
 function follow(tail){
@@ -599,7 +823,13 @@ function follow(tail){
     const r2 = align(tail, seq, 0, n, pos);
     if (r2 && r2.score >= 7){ r = r2; ok = true; }
   }
-  if (ok){ if (r.end + 1 !== pos) setPos(r.end + 1); return; }
+  if (ok){
+    if (r.end + 1 !== pos) noteProgress(pos, r.end + 1);
+    markHeard(tail, r.end);
+    if (r.end + 1 !== pos) setPos(r.end + 1);
+    if (run && pos >= words.length) finishRun();   // read to the end of the answer
+    return;
+  }
   if (S.autoFind && answers.length > 1 && (!r || r.score < 2.5)) globalFind(tail);
 }
 function globalFind(tail){
@@ -627,7 +857,7 @@ const heardEl = $('#heard');
 function startListening(){
   if (!SR){ toast('Voice follow needs Google Chrome. Switched to Auto scroll.'); setMode('auto'); return; }
   if (listening || !words.length) return;
-  listening = true; carry = []; errDelay = 120;
+  listening = true; carry = []; errDelay = 120; lastMoveAt = Date.now();
   startRec(); updateRunUI(); startTimer();
 }
 function startRec(){
@@ -675,6 +905,7 @@ function stopListening(){
   try { r && r.stop(); } catch {}
   heardEl.textContent = '';
   updateRunUI(); pauseTimer();
+  finishRun();
   applyPendingDoc();
 }
 // forget what was heard (after a manual jump), so old words can't pull the position back
@@ -732,7 +963,7 @@ function applySettings(){
   [...$('#stressSeg').children].forEach(b => b.classList.toggle('on', (b.dataset.stress === 'off') === (S.stress === 'off')));
   $('#speedRow').style.display = S.mode === 'auto' ? '' : 'none';
   if (!S.showHeard) heardEl.textContent = '';
-  updateRunUI();
+  updateRunUI(); updateLearnUI();
   if (words.length && S.mode === 'voice') requestAnimationFrame(() => scrollToPos(true));
 }
 function setMode(m){
@@ -753,10 +984,20 @@ $('#lang').addEventListener('change', e => {
   if (listening){ stopListening(); setTimeout(startListening, 250); }
 });
 const hideSettings = () => $('#settings').classList.add('hidden');
-$('#setBtn').onclick = () => $('#settings').classList.toggle('hidden');
+$('#setBtn').onclick = () => { hideTricky(); $('#settings').classList.toggle('hidden'); };
+$('#learnSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setLearn(b.dataset.learn === '1'); });
+$('#trickyBtn').onclick = () => {
+  hideSettings();
+  const el = $('#tricky');
+  if (el.classList.contains('hidden')){ renderTricky(); el.classList.remove('hidden'); } else el.classList.add('hidden');
+};
 document.addEventListener('mousedown', e => {
   if (!e.target.closest('#settings') && !e.target.closest('#setBtn')) hideSettings();
+  if (!e.target.closest('#tricky') && !e.target.closest('#trickyBtn')) hideTricky();
 });
+// leaving the page (or hiding it) ends a practice run, so it is saved
+window.addEventListener('pagehide', () => finishRun());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') finishRun(); });
 $('#editBtn').onclick = showEdit;
 $('#popBtn').onclick = () => {
   const w = Math.min(1000, screen.availWidth), h = Math.round(Math.min(460, screen.availHeight * 0.45));
@@ -783,12 +1024,13 @@ document.addEventListener('keydown', e => {
     else { manualUntil = 0; setPos(lineStep(dir)); resetHearing(); }
   }
   else if (/^[1-9]$/.test(k)){ const i = +k - 1; if (answers[i]) switchAnswer(i); }
-  else if (k === 'r' || k === 'R' || k === 'Home'){ manualUntil = 0; setPos(0, { scroll:true }); stage.scrollTop = 0; resetHearing(); resetTimer(); }
+  else if (k === 'r' || k === 'R' || k === 'Home'){ finishRun(); manualUntil = 0; setPos(0, { scroll:true }); stage.scrollTop = 0; resetHearing(); resetTimer(); }
+  else if (k === 'l' || k === 'L'){ setLearn(!S.learn); }
   else if (k === '+' || k === '='){ S.fs = Math.min(90, S.fs + 3); saveSettings(); applySettings(); }
   else if (k === '-' || k === '_'){ S.fs = Math.max(18, S.fs - 3); saveSettings(); applySettings(); }
   else if (k === 'f' || k === 'F'){ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.(); }
   else if (k === 'e' || k === 'E'){ showEdit(); }
-  else if (k === 'Escape'){ hideSettings(); }
+  else if (k === 'Escape'){ hideSettings(); hideTricky(); }
 });
 function lineStep(dir){
   if (!words.length) return 0;
@@ -809,6 +1051,11 @@ document.addEventListener('click', e => { const b = e.target.closest('button'); 
 
 /* ---------- live edits from another window ---------- */
 window.addEventListener('storage', e => {
+  if (e.key === 'tp.learn'){ // practice history saved by another window (the pop-out)
+    try { learn = JSON.parse(e.newValue) || { answers:{} }; } catch { return; }
+    if (!learn.answers) learn = { answers:{} };
+    paintTricky(); return;
+  }
   if (e.key !== 'tp.script') return;
   let text; try { text = JSON.parse(e.newValue) ?? ''; } catch { return; }
   if (text === scriptEl.value) return;
@@ -841,7 +1088,12 @@ if (!SR) setTimeout(() => toast('Open this page in Google Chrome so it can follo
 // test hook: tp.say("words you would speak") feeds the matcher as if heard
 window.tp = {
   say(text){ follow(toWords(text).slice(-10)); return { answer:cur, pos, of:words.length }; },
-  state(){ return { answer:cur, pos, of:words.length, scrollTop:stage.scrollTop, target:scrollTarget }; }
+  state(){ return { answer:cur, pos, of:words.length, scrollTop:stage.scrollTop, target:scrollTarget }; },
+  // learning-mode testing without a microphone
+  fakeHearing(v){ fakeHearing = !!v; lastMoveAt = Date.now(); },
+  endRun(){ finishRun(); },
+  md(text){ return mdToScript(text); },
+  learn(){ return learn; }
 };
 })();
 </script>

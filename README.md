@@ -8,6 +8,12 @@ A teleprompter that follows your voice. Open it in Google Chrome:
 3. Read out loud: the current word turns yellow and the text scrolls with you.
    Words you make **bold** in the Google Doc show bold in the prompter (or type `**word**` in the text box).
    Hide it in ⚙︎ → Bold from your doc.
+   Text in angle brackets, like `<Pause>` or `<Wait>`, shows in red as a cue; you don't say it.
+
+**Learning mode** (the Interview / Learning switch, or `L`): while you practise out loud, words you pause on
+mid-sentence, skip, or that come out unclear get an orange wavy underline with a count. Double-click a word to mark
+it yourself (again to clear it). **Tricky words** lists them with the reason, plus your practice runs. It is all
+saved in this browser, so it is kept when you reload.
 
 Keys: `Space` listen / pause · `1`–`9` pick an answer · `←` `→` previous / next answer ·
 `↑` `↓` back / forward a line · `R` restart · `+` `−` text size · `F` full screen · `E` edit.
