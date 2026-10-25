@@ -35,6 +35,14 @@ button:disabled{opacity:.45;cursor:default}
 #script{flex:1;width:100%;resize:none;background:#121417;border:1px solid var(--line);border-radius:10px;
   padding:16px 18px;font-size:17px;line-height:1.6;outline:none}
 #script:focus{border-color:#454a52}
+#script.linked{background:#101215;color:#c9ccd1}
+.docrow{display:flex;gap:8px;margin-bottom:6px}
+.docrow input{flex:1;min-width:0;background:#121417;border:1px solid var(--line);border-radius:8px;padding:7px 10px;outline:none;font-size:14px}
+.docrow input:focus{border-color:#454a52}
+.docrow input[readonly]{color:var(--muted)}
+.docstatus{font-size:13px;color:var(--muted);min-height:1.4em;margin-bottom:8px}
+.docstatus.ok{color:#86efac}
+.docstatus.err{color:#fca5a5}
 .elist{width:320px;border-left:1px solid var(--line);padding:16px;overflow:auto}
 .elist h3{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
 .elist ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -114,6 +122,12 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
     <div class="ecol">
       <div class="hint">Put each question on a line starting with <code># </code> and write your answer under it.
         Your text saves itself in this browser. In the prompter, press <code>1</code>–<code>9</code> to jump to an answer.</div>
+      <div class="docrow">
+        <input id="docUrl" type="url" spellcheck="false" placeholder="Or paste a Google Doc link to load your answers from it">
+        <button id="docLoad">Load</button>
+        <button id="docUnlink" class="hidden" title="Stop loading from the doc and edit here instead">Unlink</button>
+      </div>
+      <div id="docStatus" class="docstatus"></div>
       <textarea id="script" spellcheck="true" placeholder="# Tell me about yourself&#10;Your answer…"></textarea>
     </div>
     <aside class="elist">
@@ -193,7 +207,7 @@ Last year our main page was taking eight seconds to load, and customers were lea
 I measured where the time went, fixed the three slowest parts, and brought it under two seconds.
 `;
 
-const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false };
+const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false, docUrl:'' };
 let S = Object.assign({}, DEFAULTS, store.get('settings', {}));
 const saveSettings = () => store.set('settings', S);
 
@@ -221,8 +235,8 @@ const toWords = t => t.split(/[\s\-–—\/]+/).map(norm).filter(Boolean);
 
 function parse(text){
   const out = []; let cur = null;
-  for (const ln of text.replace(/\r/g,'').split('\n')){
-    const m = ln.match(/^\s*#{1,3}\s+(.*)$/);
+  for (const ln of text.replace(/^﻿/, '').replace(/\r/g,'').split('\n')){
+    const m = ln.match(/^\s*#{1,6}\s+(.*)$/);
     if (m){ cur = { title:m[1].trim() || 'Untitled', lines:[] }; out.push(cur); continue; }
     if (!cur){ if (!ln.trim()) continue; cur = { title:'Notes', lines:[] }; out.push(cur); }
     cur.lines.push(ln);
@@ -232,7 +246,7 @@ function parse(text){
     const norms = [];
     for (const line of body.split('\n')) for (const p of tokenizeLine(line)) if (p.n) norms.push(p.n);
     return { title:a.title, body, norms, titleNorms:toWords(a.title) };
-  }).filter(a => a.norms.length || a.title);
+  }).filter(a => a.norms.length);
 }
 
 /* ---------- matching: local alignment of the last spoken words against the script ---------- */
@@ -332,11 +346,102 @@ function showEdit(){
   $('#prompt').classList.add('hidden'); $('#edit').classList.remove('hidden');
   hideSettings();
   if (location.hash) history.replaceState(history.state, '', location.pathname + location.search);
+  renderList();
   scriptEl.focus();
 }
 
+/* ---------- Google Doc as the source of the answers ---------- */
+const docIdOf = u => ((u || '').match(/\/document\/(?:u\/\d+\/)?d\/([A-Za-z0-9_-]{20,})/)
+  || (u || '').trim().match(/^([A-Za-z0-9_-]{30,})$/) || [])[1] || '';
+// Google's Markdown export → plain lines; "# " headings (typed or Heading style) stay as questions.
+function mdToScript(md){
+  return md.replace(/^﻿/, '').replace(/\r/g, '').split('\n').map(line => {
+    if (/^\s*\[[^\]]+\]:\s*\S/.test(line)) return '';          // image/link reference definitions
+    let l = line.replace(/\s+$/, '');
+    if (/^[\s|:\-]+$/.test(l) && /[-|]/.test(l)) return '';      // rules and table separators
+    l = l.replace(/^\s*[-*+]\s+/, '').replace(/^\s*>\s?/, '');  // bullets, quotes
+    l = l.replace(/!\[[^\]]*\](\([^)]*\)|\[[^\]]*\])/g, '');     // images
+    l = l.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');              // links → their text
+    l = l.replace(/\\(.)/g, (_, c) => '\u0000' + c.charCodeAt(0) + '\u0001'); // keep escaped characters
+    l = l.replace(/[*_~]{1,3}/g, '').replace(/\|/g, ' ');       // bold / italic / table marks
+    return l.replace(/\u0000(\d+)\u0001/g, (_, n) => String.fromCharCode(+n));
+  }).join('\n');
+}
+async function fetchDoc(url){
+  const id = docIdOf(url);
+  if (!id) throw new Error('badlink');
+  const get = async fmt => {
+    const r = await fetch(`https://docs.google.com/document/d/${id}/export?format=${fmt}`, { cache:'no-store', credentials:'omit' });
+    if (!r.ok || /text\/html/.test(r.headers.get('content-type') || '')) throw new Error('noaccess');
+    return r.text();
+  };
+  try { return mdToScript(await get('md')); }
+  catch { return (await get('txt')).replace(/^﻿/, ''); }
+}
+const promptVisible = () => !$('#prompt').classList.contains('hidden');
+function setDocStatus(msg, cls = ''){ const el = $('#docStatus'); el.textContent = msg; el.className = 'docstatus ' + cls; }
+let pendingDoc = null, docBusy = false, lastDocTry = 0;
+async function syncDoc(opts = {}){
+  if (!S.docUrl || docBusy) return;
+  docBusy = true; lastDocTry = Date.now();
+  if (opts.loud) setDocStatus('Loading your Google Doc…');
+  try {
+    const text = await fetchDoc(S.docUrl);
+    const n = parse(text).length;
+    const at = new Date().toLocaleTimeString([], { hour:'numeric', minute:'2-digit', second:'2-digit' });
+    if (n) setDocStatus(`✓ ${n} answer${n === 1 ? '' : 's'} from your Google Doc · checked ${at} · edit the doc and this updates by itself`, 'ok');
+    else setDocStatus('Your doc has no answers yet. Put each question on its own line starting with “# ”.', 'err');
+    if (text !== scriptEl.value) applyDocText(text);
+  } catch (e) {
+    const msg = !navigator.onLine ? 'You’re offline. Using the last copy of your answers.'
+      : e.message === 'badlink' ? 'That doesn’t look like a Google Doc link.'
+      : 'Can’t read that doc. In Google Docs click Share → General access → “Anyone with the link” (Viewer).';
+    setDocStatus(msg, 'err');
+    if (opts.loud && promptVisible()) toast(msg, 6000);
+  } finally { docBusy = false; }
+}
+function applyDocText(text){
+  // never change the text under you while you are reading; apply it when you pause
+  if (promptVisible() && (listening || autoOn)){ pendingDoc = text; return; }
+  pendingDoc = null;
+  scriptEl.value = text; store.set('script', text);
+  if (promptVisible()){ reloadAnswers(); toast('Updated from your Google Doc', 2000); }
+  else renderList();
+}
+function applyPendingDoc(){ if (pendingDoc != null && !listening && !autoOn) applyDocText(pendingDoc); }
+function updateDocUI(){
+  const linked = !!S.docUrl, inp = $('#docUrl');
+  if (linked) inp.value = S.docUrl;
+  inp.readOnly = linked;
+  $('#docLoad').textContent = linked ? 'Reload' : 'Load';
+  $('#docUnlink').classList.toggle('hidden', !linked);
+  scriptEl.readOnly = linked;
+  scriptEl.classList.toggle('linked', linked);
+  scriptEl.title = linked ? 'These come from your Google Doc. Edit them there and this page picks up the change.' : '';
+  if (!linked) setDocStatus('');
+}
+$('#docLoad').onclick = () => {
+  if (!S.docUrl){
+    const u = $('#docUrl').value.trim();
+    if (!docIdOf(u)){ setDocStatus('Paste your Google Doc’s link first (it starts with https://docs.google.com/document/…).', 'err'); return; }
+    S.docUrl = u; saveSettings(); updateDocUI();
+  }
+  syncDoc({ loud:true });
+};
+$('#docUrl').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); $('#docLoad').click(); } });
+$('#docUnlink').onclick = () => { S.docUrl = ''; saveSettings(); $('#docUrl').value = ''; updateDocUI(); scriptEl.focus(); };
+setInterval(() => { if (S.docUrl && document.visibilityState === 'visible') syncDoc(); }, 15000);
+const syncSoon = () => { if (S.docUrl && Date.now() - lastDocTry > 3000) syncDoc(); };
+window.addEventListener('focus', syncSoon);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncSoon(); });
+
 /* ---------- prompter view ---------- */
-function openPrompter(k){
+async function openPrompter(k){
+  if (S.docUrl){
+    const b = $('#startBtn'); b.disabled = true; b.textContent = 'Loading your doc…';
+    await Promise.race([syncDoc(), new Promise(r => setTimeout(r, 5000))]);
+    b.textContent = 'Start prompter ▶'; b.disabled = !answers.length;
+  }
   store.set('script', scriptEl.value);
   answers = parse(scriptEl.value);
   $('#edit').classList.add('hidden'); $('#prompt').classList.remove('hidden');
@@ -349,6 +454,17 @@ function openPrompter(k){
   }
   switchAnswer(Math.min(Math.max(0, k | 0), answers.length - 1));
   if (S.mode === 'voice' && SR) startListening();
+}
+
+// re-read the answers but stay on the same one (and the same word, if its text did not change)
+function reloadAnswers(){
+  const old = answers[cur], oldPos = pos;
+  answers = parse(scriptEl.value); renderTabs();
+  if (!answers.length){ words = []; textEl.innerHTML = '<div class="notice">No answers yet. Press <b>E</b> to write some.</div>'; return; }
+  let k = old ? answers.findIndex(a => a.title === old.title) : -1;
+  if (k < 0) k = Math.min(cur, answers.length - 1);
+  switchAnswer(k);
+  if (old && answers[k].body === old.body && oldPos) setPos(oldPos, { scroll:true, instant:true });
 }
 
 function renderTabs(){
@@ -529,6 +645,7 @@ function stopListening(){
   try { r && r.stop(); } catch {}
   heardEl.textContent = '';
   updateRunUI(); pauseTimer();
+  applyPendingDoc();
 }
 // forget what was heard (after a manual jump), so old words can't pull the position back
 function resetHearing(){
@@ -539,7 +656,7 @@ function resetHearing(){
 /* ---------- auto scroll ---------- */
 let autoOn = false, lastT = 0, acc = 0;
 function startAuto(){ if (autoOn) return; autoOn = true; lastT = 0; acc = 0; requestAnimationFrame(autoStep); updateRunUI(); startTimer(); }
-function stopAuto(){ if (!autoOn) return; autoOn = false; updateRunUI(); pauseTimer(); }
+function stopAuto(){ if (!autoOn) return; autoOn = false; updateRunUI(); pauseTimer(); applyPendingDoc(); }
 function autoStep(t){
   if (!autoOn) return;
   const dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0; lastT = t;
@@ -657,10 +774,12 @@ document.addEventListener('click', e => { const b = e.target.closest('button'); 
 
 /* ---------- live edits from another window ---------- */
 window.addEventListener('storage', e => {
-  if (e.key !== 'tp.script' || $('#prompt').classList.contains('hidden')) return;
-  try { scriptEl.value = JSON.parse(e.newValue) ?? ''; } catch { return; }
-  answers = parse(scriptEl.value); renderTabs();
-  if (answers.length) switchAnswer(Math.min(cur, answers.length - 1));
+  if (e.key !== 'tp.script') return;
+  let text; try { text = JSON.parse(e.newValue) ?? ''; } catch { return; }
+  if (text === scriptEl.value) return;
+  if (promptVisible() && (listening || autoOn)){ pendingDoc = text; return; }
+  scriptEl.value = text;
+  promptVisible() ? reloadAnswers() : renderList();
 });
 
 /* ---------- toast ---------- */
@@ -671,10 +790,17 @@ function toast(msg, ms = 3200){
 }
 
 /* ---------- start ---------- */
+// a link ending in #doc=<Google Doc id> links that doc (the part after # never reaches the server)
+const docHash = location.hash.match(/^#doc=([A-Za-z0-9_-]{20,})/);
+if (docHash){
+  S.docUrl = `https://docs.google.com/document/d/${docHash[1]}/edit`; saveSettings();
+  history.replaceState(history.state, '', location.pathname + location.search);
+}
 applySettings();
 renderList();
-if (location.hash === '#prompt') openPrompter(store.get('cur', 0));
-else scriptEl.focus();
+updateDocUI();
+if (location.hash === '#prompt') openPrompter(store.get('cur', 0)); // loads the doc first
+else { scriptEl.focus(); if (S.docUrl) syncDoc({ loud:true }); }
 if (!SR) setTimeout(() => toast('Open this page in Google Chrome so it can follow your voice.', 7000), 400);
 
 // test hook: tp.say("words you would speak") feeds the matcher as if heard

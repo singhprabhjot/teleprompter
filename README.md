@@ -10,6 +10,11 @@ A teleprompter that follows your voice. Open it in Google Chrome:
 Keys: `Space` listen / pause · `1`–`9` pick an answer · `←` `→` previous / next answer ·
 `↑` `↓` back / forward a line · `R` restart · `+` `−` text size · `F` full screen · `E` edit.
 
+**Answers from a Google Doc:** paste the doc's link in the box above the text and press Load
+(the doc must be shared as "Anyone with the link → Viewer"). The page checks the doc every 15 seconds
+and picks up your edits. It never changes the text while you are reading: an edit shows up when you pause.
+A link ending in `#doc=<doc id>` links the doc in one click.
+
 Your answers are saved only in your own browser (localStorage), never in this repo.
 Voice follow uses Chrome's built-in speech recognition, which needs the internet.
 
