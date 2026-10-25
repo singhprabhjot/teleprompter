@@ -83,6 +83,7 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
 .w.cur{color:var(--accent);text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:7px}
 .w.stress.read{color:var(--dim)}
 .w.stress.cur{color:var(--accent)}
+.pb.stress{font-weight:800}
 .end{margin-top:1.2em;font-size:.5em;color:var(--muted);border-top:1px solid var(--line);padding-top:.8em}
 .end b{color:var(--text)}
 .readline{position:fixed;left:0;right:0;top:calc(var(--readline) + var(--fs) * var(--lh) / 2);height:0;pointer-events:none;z-index:2}
@@ -126,7 +127,7 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
     <div class="ecol">
       <div class="hint">Put each question on a line starting with <code>#</code> and write your answer under it.
         Your text saves itself in this browser. In the prompter, press <code>1</code>–<code>9</code> to jump to an answer.
-        In the prompter, the words to stress show in <b>bold</b>.</div>
+        Words you make <b>bold</b> in your Google Doc show bold in the prompter (typing <code>**word**</code> here does the same).</div>
       <div class="docrow">
         <input id="docUrl" type="url" spellcheck="false" placeholder="Or paste a Google Doc link to load your answers from it">
         <button id="docLoad">Load</button>
@@ -157,8 +158,8 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
   <div id="settings" class="settings hidden">
     <div class="row"><label>Mode</label>
       <div class="seg" id="modeSeg"><button data-mode="voice">Follow my voice</button><button data-mode="auto">Auto scroll</button></div></div>
-    <div class="row"><label>Stress hints</label>
-      <div class="seg" id="stressSeg"><button data-stress="auto">Auto</button><button data-stress="off">Off</button></div></div>
+    <div class="row"><label>Bold from your doc</label>
+      <div class="seg" id="stressSeg"><button data-stress="on">Show</button><button data-stress="off">Hide</button></div></div>
     <div class="row" id="speedRow"><label for="speed">Scroll speed</label><input id="speed" type="range" min="8" max="160" step="2"></div>
     <div class="row"><label for="fs">Text size</label><input id="fs" type="range" min="18" max="90" step="1"></div>
     <div class="row"><label for="w">Column width</label><input id="w" type="range" min="360" max="1700" step="10"></div>
@@ -216,7 +217,7 @@ I measured where the time went, fixed the three slowest parts, and brought it un
 
 // The Google Doc the answers come from unless this browser was unlinked from it.
 const DEFAULT_DOC = 'https://docs.google.com/document/d/1JQ85zXCVrGll95KLjLDxMi7M3-8vQ7iOInH2y_k5b10/edit';
-const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false, docUrl:DEFAULT_DOC, docUnlinked:false, stress:'auto' };
+const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false, docUrl:DEFAULT_DOC, docUnlinked:false, stress:'on' };
 let S = Object.assign({}, DEFAULTS, store.get('settings', {}));
 if (!S.docUrl && !S.docUnlinked) S.docUrl = DEFAULT_DOC;
 const saveSettings = () => store.set('settings', S);
@@ -232,13 +233,19 @@ function norm(w){
   return NUM[s] || s;
 }
 // One tokenizer for both the page and the matcher, so word i on screen == word i in the matcher.
+// **text** marks bold (from the Google Doc's bold, or typed); b = the piece is bold.
 function tokenizeLine(line){
   const out = [];
-  for (const part of line.split(/(\s+)/)){
-    if (!part) continue;
-    if (/^\s+$/.test(part)){ out.push({ t:' ', n:'' }); continue; }
-    for (const piece of part.split(/(?<=[-–—\/])/)) out.push({ t:piece, n:norm(piece) });
-  }
+  const push = (seg, b) => {
+    for (const part of seg.replace(/\*+/g, '').split(/(\s+)/)){
+      if (!part) continue;
+      if (/^\s+$/.test(part)){ out.push({ t:' ', n:'', b }); continue; }
+      for (const piece of part.split(/(?<=[-–—\/])/)) out.push({ t:piece, n:norm(piece), b });
+    }
+  };
+  const re = /\*\*(.+?)\*\*/g; let last = 0, m;
+  while ((m = re.exec(line))){ push(line.slice(last, m.index), false); push(m[1], true); last = re.lastIndex; }
+  push(line.slice(last), false);
   return out;
 }
 const toWords = t => t.split(/[\s\-–—\/]+/).map(norm).filter(Boolean);
@@ -247,8 +254,8 @@ function parse(text){
   const out = []; let cur = null;
   for (const ln of text.replace(/^﻿/, '').replace(/\r/g,'').split('\n')){
     // "# Question" or "#Question" starts an answer; "#1 priority" (digit right after #) does not
-    const m = ln.match(/^\s*#{1,6}(?:\s+|(?=[^\s\d#]))(.*)$/);
-    if (m){ cur = { title:m[1].trim() || 'Untitled', lines:[] }; out.push(cur); continue; }
+    const m = ln.replace(/\*+/g, '').match(/^\s*#{1,6}(?:\s+|(?=[^\s\d#]))(.*)$/);
+    if (m){ cur = { title:m[1].replace(/^[#\s]+/, '').trim() || 'Untitled', lines:[] }; out.push(cur); continue; }
     if (!cur){ if (!ln.trim()) continue; cur = { title:'Notes', lines:[] }; out.push(cur); }
     cur.lines.push(ln);
   }
@@ -315,76 +322,11 @@ function align(tail, seq, lo, hi, near){
   return best;
 }
 
-/* ---------- stress hints: which words to lean on so it doesn't sound flat ---------- */
-// Per phrase (split at punctuation and at "and / but / because…"): stress numbers, strong words,
-// and the last NEW key word (English puts its main stress there). Words already said are not stressed again.
-const wordSet = s => new Set(s.split(/\s+/));
-const FUNC = wordSet(`a an the and or but nor so yet of to in on at for with from by as into onto about over under after before
-  during while than then that this these those which who whom whose what when where why how is are was were be been being am
-  do does did done have has had having will would shall should can could may might must i me my mine myself we us our ours you
-  your yours he him his she her hers it its they them their theirs there here also just very really too some any each such own
-  same other another more much many im ive id ill thats theres weve youre theyre lets get got make made include includes including
-  like well llc inc ltd corp co currently additionally however finally overall honestly basically actually today now addition
-  furthermore moreover therefore later initially recently looking`);
-const EMPH = wordSet(`1st 2nd 3rd not no never none nothing nobody only every all always most best top key critical entire whole full
-  both zero dont cant didnt wont isnt wasnt arent couldnt shouldnt wouldnt doesnt havent hasnt hadnt biggest largest strongest
-  highest fastest greatest huge major directly personally truly`);
-const QTY = wordSet(`decade decades dozen dozens hundreds thousands millions billions half twice double triple`);
-const PREP = wordSet(`at in for with from of on to by during across through since`);
-const CONJ = wordSet(`and but because which while so where who whereas although though`);
-function autoStress(list){
-  const phrases = []; let ph = [];
-  list.forEach((w, i) => {
-    if (ph.length >= 4 && CONJ.has(w.n)){ phrases.push(ph); ph = []; }
-    ph.push(i);
-    if (w.end){ phrases.push(ph); ph = []; }
-  });
-  if (ph.length) phrases.push(ph);
-  const picked = new Set(), seen = new Set();
-  for (const p of phrases){
-    const content = p.filter(i => { const n = list[i].n; return /\d/.test(list[i].t) || (n.length > 1 && !FUNC.has(n) && !CONJ.has(n) && !PREP.has(n)); });
-    if (!content.length) continue;
-    const isNew = i => !seen.has(list[i].n);
-    const fresh = content.filter(isNew);
-    const last = fresh.length ? fresh[fresh.length - 1] : -1;
-    const scored = content.map(i => {
-      const w = list[i], next = list[i + 1], L = w.t.replace(/[^A-Za-z]/g, '');
-      let s = 1;
-      if (/\d/.test(w.t) || QTY.has(w.n)) s += 4;
-      if (EMPH.has(w.n)) s += 3;
-      if (L.length >= 2 && L === L.toUpperCase()) s += 1.5;
-      else if (!w.sentStart && /^[A-Z]/.test(L)) s += 0.5;
-      if (i === last) s += 2.5;
-      else if (next && p.includes(i + 1) && PREP.has(next.n)) s += 1.5;
-      if (w.n.length >= 9) s += 0.5;
-      if (!isNew(i)) s -= 2;
-      return { i, s };
-    }).sort((a, b) => b.s - a.s || b.i - a.i);
-    const max = p.length <= 7 ? 1 : p.length <= 14 ? 2 : 3, chosen = [];
-    for (const c of scored){
-      if (chosen.length >= max || c.s < 2.5 || (chosen.length && c.s < 3.5)) break;
-      if (chosen.some(j => Math.abs(j - c.i) <= 1)) continue;
-      chosen.push(c.i);
-    }
-    chosen.forEach(i => picked.add(i));
-    content.forEach(i => seen.add(list[i].n));
-  }
-  return picked;
-}
-function applyStress(){
-  for (const w of words) w.el.classList.remove('stress');
-  if (S.stress === 'off' || !words.length) return;
-  for (const i of autoStress(words)){
-    // a word split at "-" or "/" (24/7, long-term) is bolded whole
-    let a = i, b = i;
-    while (a > 0 && /[-–—\/]$/.test(words[a - 1].t)) a--;
-    while (b < words.length - 1 && /[-–—\/]$/.test(words[b].t)) b++;
-    for (let j = a; j <= b; j++) words[j].el.classList.add('stress');
-  }
-}
+/* ---------- bold: words you made bold in your Google Doc show bold here ---------- */
+function applyStress(){ const on = S.stress !== 'off'; for (const el of boldEls) el.classList.toggle('stress', on); }
 
 /* ---------- state ---------- */
-let answers = [], cur = 0, words = [], pos = 0, endEl = null;
+let answers = [], cur = 0, words = [], pos = 0, endEl = null, boldEls = [];
 const textEl = $('#text'), stage = $('#stage');
 
 /* ---------- edit view ---------- */
@@ -442,8 +384,9 @@ function mdToScript(md){
     l = l.replace(/!\[[^\]]*\](\([^)]*\)|\[[^\]]*\])/g, '');     // images
     l = l.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');              // links → their text
     l = l.replace(/\\(.)/g, (_, c) => '\u0000' + c.charCodeAt(0) + '\u0001'); // keep escaped characters
-    l = l.replace(/[*_~]{1,3}/g, '').replace(/\|/g, ' ');       // bold / italic / table marks
-    return l.replace(/\u0000(\d+)\u0001/g, (_, n) => String.fromCharCode(+n));
+    l = l.replace(/[_~]{1,3}/g, '').replace(/\|/g, ' ');        // underscores / strike / table marks
+    l = l.replace(/\*{3}/g, '**').replace(/(?<!\*)\*(?!\*)/g, ''); // keep **bold**, drop *italic*
+    return l.replace(/\u0000(\d+)\u0001/g, (_, n) => n === '42' ? '' : String.fromCharCode(+n)); // a literal * is dropped
   }).join('\n');
 }
 async function fetchDoc(url){
@@ -572,27 +515,25 @@ function switchAnswer(k, opts = {}){
 
 function renderAnswer(){
   const a = answers[cur];
-  textEl.innerHTML = ''; words = [];
+  textEl.innerHTML = ''; words = []; boldEls = [];
   const q = document.createElement('div'); q.className = 'q'; q.textContent = `${cur + 1}. ${a.title}`;
   textEl.appendChild(q);
   for (const line of a.body.split('\n')){
     const p = document.createElement('p');
     if (!line.trim()){ p.className = 'gap'; textEl.appendChild(p); continue; }
     for (const tok of tokenizeLine(line)){
-      const prev = words[words.length - 1];
       if (!tok.n){
-        p.appendChild(document.createTextNode(tok.t));
-        if (prev && /[,.;:!?…)—–]/.test(tok.t)) prev.end = true;          // punctuation on its own ends a phrase
-        if (prev && /[.!?]/.test(tok.t)) prev.sentEnd = true;
+        if (tok.b && tok.t.trim()){ // punctuation inside bold
+          const b = document.createElement('span'); b.className = 'pb'; b.textContent = tok.t; boldEls.push(b); p.appendChild(b);
+        } else p.appendChild(document.createTextNode(tok.t));
         continue;
       }
       const s = document.createElement('span');
       s.className = 'w'; s.textContent = tok.t; s.dataset.i = words.length;
-      words.push({ n:tok.n, el:s, t:tok.t, sentStart:!prev || !!prev.sentEnd,
-        end:/[,.;:!?…)—–]["'”’)\]]*$/.test(tok.t), sentEnd:/[.!?]["'”’)\]]*$/.test(tok.t) });
+      words.push({ n:tok.n, el:s });
+      if (tok.b) boldEls.push(s);
       p.appendChild(s);
     }
-    if (words.length) words[words.length - 1].end = true;                // a line break ends a phrase too
     textEl.appendChild(p);
   }
   applyStress();
@@ -788,7 +729,7 @@ function applySettings(){
   $('#speed').value = S.speed; $('#fs').value = S.fs; $('#w').value = S.w; $('#rl').value = S.rl;
   $('#lang').value = S.lang; $('#autoFind').checked = !!S.autoFind; $('#showHeard').checked = !!S.showHeard; $('#mirror').checked = !!S.mirror;
   [...$('#modeSeg').children].forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
-  [...$('#stressSeg').children].forEach(b => b.classList.toggle('on', b.dataset.stress === S.stress));
+  [...$('#stressSeg').children].forEach(b => b.classList.toggle('on', (b.dataset.stress === 'off') === (S.stress === 'off')));
   $('#speedRow').style.display = S.mode === 'auto' ? '' : 'none';
   if (!S.showHeard) heardEl.textContent = '';
   updateRunUI();
