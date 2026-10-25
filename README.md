@@ -3,7 +3,7 @@
 A teleprompter that follows your voice. Open it in Google Chrome:
 **https://singhprabhjot.github.io/teleprompter/**
 
-1. Put each question on a line starting with `# ` and write your answer under it.
+1. Put each question on a line starting with `#` (a space after it is optional) and write your answer under it.
 2. Click **Start prompter** and allow the microphone.
 3. Read out loud: the current word turns yellow and the text scrolls with you.
 

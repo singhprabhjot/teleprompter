@@ -120,7 +120,7 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
   </header>
   <div class="ewrap">
     <div class="ecol">
-      <div class="hint">Put each question on a line starting with <code># </code> and write your answer under it.
+      <div class="hint">Put each question on a line starting with <code>#</code> and write your answer under it.
         Your text saves itself in this browser. In the prompter, press <code>1</code>–<code>9</code> to jump to an answer.</div>
       <div class="docrow">
         <input id="docUrl" type="url" spellcheck="false" placeholder="Or paste a Google Doc link to load your answers from it">
@@ -239,7 +239,8 @@ const toWords = t => t.split(/[\s\-–—\/]+/).map(norm).filter(Boolean);
 function parse(text){
   const out = []; let cur = null;
   for (const ln of text.replace(/^﻿/, '').replace(/\r/g,'').split('\n')){
-    const m = ln.match(/^\s*#{1,6}\s+(.*)$/);
+    // "# Question" or "#Question" starts an answer; "#1 priority" (digit right after #) does not
+    const m = ln.match(/^\s*#{1,6}(?:\s+|(?=[^\s\d#]))(.*)$/);
     if (m){ cur = { title:m[1].trim() || 'Untitled', lines:[] }; out.push(cur); continue; }
     if (!cur){ if (!ln.trim()) continue; cur = { title:'Notes', lines:[] }; out.push(cur); }
     cur.lines.push(ln);
