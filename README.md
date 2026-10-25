@@ -15,7 +15,8 @@ Keys: `Space` listen / pause · `1`–`9` pick an answer · `←` `→` previous
 and picks up your edits. It never changes the text while you are reading: an edit shows up when you pause.
 A link ending in `#doc=<doc id>` links the doc in one click.
 
-Your answers are saved only in your own browser (localStorage), never in this repo.
+By default the page loads the Google Doc set as `DEFAULT_DOC` in `index.html`. Click **Unlink** to type your own text
+instead; that browser then stays unlinked.
 Voice follow uses Chrome's built-in speech recognition, which needs the internet.
 
 To run it locally instead, double-click `Start Teleprompter.command` (serves it on http://localhost:8777).

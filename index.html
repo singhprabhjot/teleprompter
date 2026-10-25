@@ -207,8 +207,11 @@ Last year our main page was taking eight seconds to load, and customers were lea
 I measured where the time went, fixed the three slowest parts, and brought it under two seconds.
 `;
 
-const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false, docUrl:'' };
+// The Google Doc the answers come from unless this browser was unlinked from it.
+const DEFAULT_DOC = 'https://docs.google.com/document/d/1JQ85zXCVrGll95KLjLDxMi7M3-8vQ7iOInH2y_k5b10/edit';
+const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false, docUrl:DEFAULT_DOC, docUnlinked:false };
 let S = Object.assign({}, DEFAULTS, store.get('settings', {}));
+if (!S.docUrl && !S.docUnlinked) S.docUrl = DEFAULT_DOC;
 const saveSettings = () => store.set('settings', S);
 
 /* ---------- words ---------- */
@@ -311,7 +314,7 @@ const textEl = $('#text'), stage = $('#stage');
 /* ---------- edit view ---------- */
 const scriptEl = $('#script');
 let scriptText = store.get('script', null);
-if (scriptText == null) scriptText = SAMPLE;
+if (scriptText == null) scriptText = S.docUrl ? '' : SAMPLE;
 scriptEl.value = scriptText;
 
 function renderList(){
@@ -424,12 +427,12 @@ $('#docLoad').onclick = () => {
   if (!S.docUrl){
     const u = $('#docUrl').value.trim();
     if (!docIdOf(u)){ setDocStatus('Paste your Google Doc’s link first (it starts with https://docs.google.com/document/…).', 'err'); return; }
-    S.docUrl = u; saveSettings(); updateDocUI();
+    S.docUrl = u; S.docUnlinked = false; saveSettings(); updateDocUI();
   }
   syncDoc({ loud:true });
 };
 $('#docUrl').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); $('#docLoad').click(); } });
-$('#docUnlink').onclick = () => { S.docUrl = ''; saveSettings(); $('#docUrl').value = ''; updateDocUI(); scriptEl.focus(); };
+$('#docUnlink').onclick = () => { S.docUrl = ''; S.docUnlinked = true; saveSettings(); $('#docUrl').value = ''; updateDocUI(); scriptEl.focus(); };
 setInterval(() => { if (S.docUrl && document.visibilityState === 'visible') syncDoc(); }, 15000);
 const syncSoon = () => { if (S.docUrl && Date.now() - lastDocTry > 3000) syncDoc(); };
 window.addEventListener('focus', syncSoon);
@@ -793,7 +796,7 @@ function toast(msg, ms = 3200){
 // a link ending in #doc=<Google Doc id> links that doc (the part after # never reaches the server)
 const docHash = location.hash.match(/^#doc=([A-Za-z0-9_-]{20,})/);
 if (docHash){
-  S.docUrl = `https://docs.google.com/document/d/${docHash[1]}/edit`; saveSettings();
+  S.docUrl = `https://docs.google.com/document/d/${docHash[1]}/edit`; S.docUnlinked = false; saveSettings();
   history.replaceState(history.state, '', location.pathname + location.search);
 }
 applySettings();
