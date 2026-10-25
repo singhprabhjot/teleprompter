@@ -54,21 +54,38 @@ button:disabled{opacity:.45;cursor:default}
 @media (max-width:760px){.ewrap{flex-direction:column}.elist{width:auto;border-left:0;border-top:1px solid var(--line);max-height:35vh}}
 
 /* ---------- Prompter view ---------- */
-.pbar{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;gap:8px;padding:8px 12px 18px;
+/* the questions live in a sidebar: docked beside the text on wide screens, sliding over it on narrow ones */
+:root{--sideW:0px}
+body.side-docked{--sideW:290px}
+.side{position:fixed;top:0;bottom:0;left:0;width:290px;max-width:85vw;z-index:9;background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;transform:translateX(-102%);transition:transform .22s ease}
+.side.open{transform:none}
+body:not(.side-docked) .side.open{box-shadow:12px 0 40px #0009}
+.side .sh{display:flex;align-items:center;justify-content:space-between;padding:12px 10px 6px 18px;color:var(--muted);font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.07em}
+.side .sh button{background:transparent;border:0;font-size:18px;padding:4px 10px;color:var(--muted)}
+#qlist{flex:1;overflow:auto;padding:4px 8px 20px}
+.qi{width:100%;display:flex;gap:10px;align-items:flex-start;text-align:left;background:transparent;border:0;border-radius:10px;
+  padding:10px 10px;margin-bottom:2px;font-size:14px;line-height:1.38;color:#c9ccd1}
+.qi:hover{background:#ffffff0d}
+.qi .qn{color:var(--accent);font-weight:700;min-width:1.1em}
+.qi .qt{flex:1;min-width:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.qi .qk{color:#f0997b;font-size:12px;font-weight:700;padding-top:1px}
+.qi.on{background:var(--accent);color:#1a1400;font-weight:600}
+.qi.on .qn{color:#1a1400}
+.qi.on .qk{color:#712b13}
+.scrim{position:fixed;inset:0;z-index:8;background:#0009}
+#sideBtn{font-size:17px;padding:5px 11px}
+.pbar{position:fixed;top:0;left:var(--sideW);right:0;z-index:5;display:flex;align-items:center;gap:8px;padding:8px 12px 18px;
   background:linear-gradient(var(--bg) 65%,transparent);transition:opacity .3s}
 body.live .pbar{opacity:.16}
 body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
-.tabs{display:flex;gap:6px;overflow-x:auto;min-width:0;flex:1;scrollbar-width:none}
-.tabs::-webkit-scrollbar{display:none}
-.tab{white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis;font-size:13px;padding:5px 10px;flex:none}
-.tab.on{background:var(--accent);color:#1a1400;border-color:transparent;font-weight:600}
 .timer{font-variant-numeric:tabular-nums;color:var(--muted);font-size:14px;min-width:3.2em;text-align:right}
 .mic{min-width:9.5em}
 .mic.on{border-color:var(--live);color:#ffd6d6}
 .mic.on::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--live);margin-right:7px;vertical-align:1px;animation:pulse 1.2s infinite}
 @keyframes pulse{50%{opacity:.25}}
 
-.stage{position:fixed;inset:0;overflow-y:auto;padding:var(--readline) 0 85vh;scrollbar-width:none}
+.stage{position:fixed;inset:0;left:var(--sideW);overflow-y:auto;padding:var(--readline) 0 85vh;scrollbar-width:none}
 .stage::-webkit-scrollbar{display:none}
 .text{max-width:var(--w);margin:0 auto;padding:0 28px;font-size:var(--fs);line-height:var(--lh);font-weight:500}
 .text.mirror{transform:scaleX(-1)}
@@ -108,18 +125,17 @@ html{touch-action:manipulation}
 .tnote{color:var(--muted);font-size:12px;margin-top:10px;line-height:1.5}
 @media (max-width:820px){
   .pbar{flex-wrap:wrap;row-gap:6px}
-  .tabs{order:10;flex-basis:100%}
   .timer,#popBtn{display:none}
   .mic{min-width:0}
 }
 .end{margin-top:1.2em;font-size:.5em;color:var(--muted);border-top:1px solid var(--line);padding-top:.8em}
 .end b{color:var(--text)}
-.readline{position:fixed;left:0;right:0;top:calc(var(--readline) + var(--fs) * var(--lh) / 2);height:0;pointer-events:none;z-index:2}
+.readline{position:fixed;left:var(--sideW);right:0;top:calc(var(--readline) + var(--fs) * var(--lh) / 2);height:0;pointer-events:none;z-index:2}
 .readline::before,.readline::after{content:"";position:absolute;top:-9px;border:9px solid transparent;opacity:.55}
 .readline::before{left:4px;border-left-color:var(--accent)}
 .readline::after{right:4px;border-right-color:var(--accent)}
 
-.heard{position:fixed;left:0;right:0;bottom:0;z-index:4;padding:22px 16px 10px;font-size:13px;color:var(--muted);
+.heard{position:fixed;left:var(--sideW);right:0;bottom:0;z-index:4;padding:22px 16px 10px;font-size:13px;color:var(--muted);
   text-align:center;background:linear-gradient(transparent,var(--bg) 60%);pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .heard:empty{display:none}
 
@@ -176,10 +192,16 @@ html{touch-action:manipulation}
 <section id="prompt" class="view hidden">
   <div id="stage" class="stage"><div id="text" class="text"></div></div>
   <div class="readline"></div>
+  <div id="scrim" class="scrim hidden"></div>
+  <aside id="side" class="side" aria-label="Questions">
+    <div class="sh"><span>Questions</span><button id="sideClose" title="Hide the questions" aria-label="Hide the questions">⟨</button></div>
+    <nav id="qlist"></nav>
+  </aside>
   <header id="pbar" class="pbar">
+    <button id="sideBtn" title="Questions" aria-label="Show or hide the questions">☰</button>
     <button id="editBtn" title="Edit answers (E)">✎ Edit</button>
     <div class="seg" id="learnSeg" title="Learning mode marks the words you struggle with (L)"><button data-learn="0">Interview</button><button data-learn="1">Learning</button></div>
-    <div id="tabs" class="tabs"></div>
+    <div class="spacer"></div>
     <span id="timer" class="timer">0:00</span>
     <button id="trickyBtn" class="hidden" title="Words you struggled with, and your practice runs">Tricky words</button>
     <button id="micBtn" class="mic">🎙 Listen</button>
@@ -461,7 +483,7 @@ function paintTricky(){
     n++;
     if (r.n > 0){ const b = document.createElement('sup'); b.className = 'tc'; b.textContent = r.n; w.el.after(b); }
   });
-  trickyCount = n; updateLearnUI();
+  trickyCount = n; updateLearnUI(); updateQCounts();
 }
 function updateLearnUI(){
   [...$('#learnSeg').children].forEach(b => b.classList.toggle('on', (b.dataset.learn === '1') === !!S.learn));
@@ -679,6 +701,7 @@ async function openPrompter(k){
   if (location.hash !== '#prompt') history.replaceState(history.state, '', '#prompt');
   applySettings();
   renderTabs();
+  layoutSide();
   if (!answers.length){
     textEl.innerHTML = '<div class="notice">No answers yet. Press <b>E</b> to write some.</div>';
     words = []; return;
@@ -701,15 +724,49 @@ function reloadAnswers(){
   if (old && answers[k].body === old.body && oldPos) setPos(oldPos, { scroll:true, instant:true });
 }
 
+/* ---------- the questions sidebar ---------- */
+const DOCK_MIN = 960;                       // this wide or wider: the sidebar sits beside the text
+let sideOverlayOpen = false;
+const isDocked = () => innerWidth >= DOCK_MIN;
+function layoutSide(){
+  const docked = isDocked(), open = docked ? S.sideOpen !== false : sideOverlayOpen;
+  document.body.classList.toggle('side-docked', docked && open);
+  $('#side').classList.toggle('open', open);
+  $('#scrim').classList.toggle('hidden', docked || !open);
+  if (words.length && S.mode === 'voice') requestAnimationFrame(() => scrollToPos(true)); // the text column changed width
+}
+function toggleSide(force){
+  if (isDocked()){ S.sideOpen = force ?? (S.sideOpen === false); saveSettings(); }
+  else sideOverlayOpen = force ?? !sideOverlayOpen;
+  layoutSide();
+}
+$('#sideBtn').onclick = () => toggleSide();
+$('#sideClose').onclick = () => toggleSide(false);
+$('#scrim').onclick = () => toggleSide(false);
+window.addEventListener('resize', layoutSide);
+
+const trickyIn = k => Object.values(learn.answers[aKeyOf(k)]?.words || {}).filter(isTricky).length;
 function renderTabs(){
-  const tabs = $('#tabs'); tabs.innerHTML = '';
+  const list = $('#qlist'); list.innerHTML = '';
   answers.forEach((a, k) => {
     const b = document.createElement('button');
-    b.className = 'tab' + (k === cur ? ' on' : '');
-    b.textContent = `${k + 1}. ${a.title}`;
+    b.className = 'qi' + (k === cur ? ' on' : '');
     b.title = a.title;
-    b.onclick = () => switchAnswer(k);
-    tabs.appendChild(b);
+    const n = document.createElement('span'); n.className = 'qn'; n.textContent = k + 1;
+    const t = document.createElement('span'); t.className = 'qt'; t.textContent = a.title;
+    const c = document.createElement('span'); c.className = 'qk';
+    b.append(n, t, c);
+    b.onclick = () => { switchAnswer(k); if (!isDocked()) toggleSide(false); };
+    list.appendChild(b);
+  });
+  updateQCounts();
+}
+// the orange number beside a question = its tricky words
+function updateQCounts(){
+  [...$('#qlist').children].forEach((b, k) => {
+    const n = trickyIn(k), c = b.querySelector('.qk');
+    if (c) c.textContent = n ? n : '';
+    b.title = answers[k]?.title + (n ? ` · ${n} tricky word${n === 1 ? '' : 's'}` : '');
   });
 }
 
@@ -718,8 +775,8 @@ function switchAnswer(k, opts = {}){
   finishRun();
   hideTricky();
   cur = k; store.set('cur', k);
-  [...$('#tabs').children].forEach((b, i) => b.classList.toggle('on', i === k));
-  $('#tabs').children[k]?.scrollIntoView({ block:'nearest', inline:'nearest' });
+  [...$('#qlist').children].forEach((b, i) => b.classList.toggle('on', i === k));
+  $('#qlist').children[k]?.scrollIntoView({ block:'nearest' });
   renderAnswer();
   pos = 0; paintAll();
   stage.scrollTop = 0; scrollTarget = 0;
@@ -1048,7 +1105,7 @@ document.addEventListener('keydown', e => {
   else if (k === '-' || k === '_'){ S.fs = Math.max(18, S.fs - 3); saveSettings(); applySettings(); }
   else if (k === 'f' || k === 'F'){ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.(); }
   else if (k === 'e' || k === 'E'){ showEdit(); }
-  else if (k === 'Escape'){ hideSettings(); hideTricky(); }
+  else if (k === 'Escape'){ hideSettings(); hideTricky(); if (!isDocked()) toggleSide(false); }
 });
 function lineStep(dir){
   if (!words.length) return 0;
