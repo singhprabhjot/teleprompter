@@ -1,6 +1,6 @@
 # Teleprompter
 
-A teleprompter that follows your voice. Open it in Google Chrome:
+A teleprompter that follows your voice. Open it in Google Chrome on a Mac, or Safari on an iPad:
 **https://singhprabhjot.github.io/teleprompter/**
 
 1. Put each question on a line starting with `#` (a space after it is optional) and write your answer under it.
@@ -12,7 +12,7 @@ A teleprompter that follows your voice. Open it in Google Chrome:
 
 **Learning mode** (the Interview / Learning switch, or `L`): while you practise out loud, words you pause on
 mid-sentence, skip, or that come out unclear get an orange wavy underline with a count. Double-click a word to mark
-it yourself (again to clear it). **Tricky words** lists them with the reason, plus your practice runs. It is all
+it yourself (on iPad: press and hold; again to clear it). **Tricky words** lists them with the reason, plus your practice runs. It is all
 saved in this browser, so it is kept when you reload.
 
 Keys: `Space` listen / pause · `1`–`9` pick an answer · `←` `→` previous / next answer ·

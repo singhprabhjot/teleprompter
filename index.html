@@ -84,7 +84,9 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
 .w.stress.read{color:var(--dim)}
 .w.stress.cur{color:var(--accent)}
 .pb.stress{font-weight:800}
-.text{-webkit-user-select:none;user-select:none}
+.text{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html{touch-action:manipulation}
+@media (pointer:coarse){ #popBtn{display:none} }
 .cue{color:#f87171;font-weight:700}
 .w.tricky{text-decoration:underline wavy #f0997b;text-decoration-thickness:2px;text-underline-offset:8px}
 .w.tricky.read{text-decoration-color:rgba(240,153,123,.45)}
@@ -211,7 +213,8 @@ body.live .pbar:hover,body.live .pbar:focus-within{opacity:1}
       <kbd>↑</kbd> <kbd>↓</kbd> back / forward a line (speed in auto mode)<br>
       <kbd>R</kbd> back to the start &nbsp; <kbd>+</kbd> <kbd>−</kbd> text size<br>
       <kbd>F</kbd> full screen &nbsp; <kbd>E</kbd> edit &nbsp; click a word to jump there<br>
-      <kbd>L</kbd> learning mode &nbsp; double-click a word to mark it tricky (again to clear)
+      <kbd>L</kbd> learning mode &nbsp; double-click a word to mark it tricky (again to clear)<br>
+      On iPad: press and hold a word to mark it tricky (again to clear)
     </div>
   </div>
   <div id="tricky" class="settings tpanel hidden"></div>
@@ -682,7 +685,10 @@ async function openPrompter(k){
     words = []; return;
   }
   switchAnswer(Math.min(Math.max(0, k | 0), answers.length - 1));
-  if (S.mode === 'voice' && SR) startListening();
+  if (S.mode === 'voice' && SR){
+    if (isIOS) toast('Tap 🎙 Listen when you’re ready.', 3500);   // Safari needs a tap to turn the microphone on
+    else startListening();
+  }
 }
 
 // re-read the answers but stay on the same one (and the same word, if its text did not change)
@@ -793,21 +799,39 @@ function stepScroll(){
 stage.addEventListener('wheel', () => { manualUntil = Date.now() + 1500; }, { passive:true });
 stage.addEventListener('touchmove', () => { manualUntil = Date.now() + 1500; }, { passive:true });
 textEl.addEventListener('click', e => {
+  if (press && press.done){ press = null; return; }   // the end of a press-and-hold, not a tap
   const w = e.target.closest('.w'); if (!w) return;
   manualUntil = 0; setPos(+w.dataset.i, { scroll:true });
   if (S.mode === 'voice') resetHearing();
 });
 window.addEventListener('resize', () => { if (words.length && S.mode === 'voice') scrollToPos(true); });
-// double-click a word: mark it tricky, or clear it if it already is
-textEl.addEventListener('dblclick', e => {
-  const w = e.target.closest('.w'); if (!w) return;
-  e.preventDefault(); window.getSelection()?.removeAllRanges();
-  const i = +w.dataset.i, A = learnFor(aKeyOf(cur)), k = wordKeys[i];
+// mark a word tricky, or clear it if it already is: double-click (Mac) or press and hold (iPad)
+function toggleMark(i){
+  const A = learnFor(aKeyOf(cur)), k = wordKeys[i];
+  if (!k) return;
   if (isTricky(A.words[k])){ delete A.words[k]; toast(`Cleared “${wordText(i)}”`, 1500); }
   else { A.words[k] = { w:wordText(i), n:0, paused:0, skipped:0, misheard:0, marked:true, last:Date.now() }; toast(`Marked “${wordText(i)}” as tricky`, 1500); }
   saveLearn(); paintTricky();
   if (!$('#tricky').classList.contains('hidden')) renderTricky();
+}
+textEl.addEventListener('dblclick', e => {
+  const w = e.target.closest('.w'); if (!w) return;
+  e.preventDefault(); window.getSelection()?.removeAllRanges();
+  toggleMark(+w.dataset.i);
 });
+let press = null;
+textEl.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') return;
+  const w = e.target.closest('.w'); if (!w) return;
+  const p = { x:e.clientX, y:e.clientY, done:false };
+  p.t = setTimeout(() => { p.done = true; toggleMark(+w.dataset.i); navigator.vibrate?.(15); }, 550);
+  press = p;
+});
+textEl.addEventListener('pointermove', e => {
+  if (press && !press.done && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10){ clearTimeout(press.t); press = null; } // scrolling, not holding
+});
+['pointerup', 'pointercancel'].forEach(t => textEl.addEventListener(t, () => { if (press && !press.done){ clearTimeout(press.t); press = null; } }));
+textEl.addEventListener('contextmenu', e => { if (e.target.closest('.w')) e.preventDefault(); });
 
 /* ---------- following the voice ---------- */
 function follow(tail){
@@ -851,13 +875,19 @@ function globalFind(tail){
 
 /* ---------- speech recognition (Chrome) ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, listening = false, carry = [], restartT = 0, errDelay = 120;
+// iPad Safari reports itself as a Mac; touch points give it away
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let rec = null, listening = false, carry = [], restartT = 0, errDelay = 120, everHeard = false, byGesture = false;
 const heardEl = $('#heard');
 
-function startListening(){
-  if (!SR){ toast('Voice follow needs Google Chrome. Switched to Auto scroll.'); setMode('auto'); return; }
+// gesture = started by a tap/click/key (Safari only lets a tap turn the microphone on)
+function startListening(gesture = false){
+  if (!SR){
+    toast(isIOS ? 'Voice follow isn’t available in this browser. On the iPad, use Safari. Switched to Auto scroll.' : 'Voice follow needs Google Chrome. Switched to Auto scroll.', 6000);
+    setMode('auto'); return;
+  }
   if (listening || !words.length) return;
-  listening = true; carry = []; errDelay = 120; lastMoveAt = Date.now();
+  listening = true; carry = []; errDelay = 120; lastMoveAt = Date.now(); everHeard = false; byGesture = gesture;
   startRec(); updateRunUI(); startTimer();
 }
 function startRec(){
@@ -866,7 +896,7 @@ function startRec(){
   r._last = carry.slice();
   r.onresult = e => {
     if (r !== rec) return;
-    errDelay = 120;
+    errDelay = 120; everHeard = true;
     let fin = '', interim = '';
     for (let i = 0; i < e.results.length; i++){
       const t = e.results[i][0].transcript;
@@ -880,12 +910,17 @@ function startRec(){
   };
   r.onerror = e => {
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      const heardBefore = everHeard, gesture = byGesture;
       stopListening();
-      toast('Microphone is blocked. Click the icon at the left of the address bar → allow Microphone, then press Space.', 9000);
+      if (heardBefore) toast('Listening stopped. Tap 🎙 Listen to carry on.', 6000);        // Safari would not restart it by itself
+      else if (!gesture) toast('Tap 🎙 Listen to start.', 4000);
+      else toast(isIOS
+        ? 'Safari can’t use the microphone. On the iPad: Settings → Apps → Safari → Microphone → Allow, and Settings → General → Keyboard → turn on Dictation. Then tap 🎙 Listen.'
+        : 'Microphone is blocked. Click the icon at the left of the address bar → allow Microphone, then press Space.', 10000);
     } else if (e.error === 'audio-capture'){
-      stopListening(); toast('No microphone found. Check System Settings → Sound → Input.', 8000);
+      stopListening(); toast(isIOS ? 'No microphone found. Check that no other app is using it.' : 'No microphone found. Check System Settings → Sound → Input.', 8000);
     } else if (e.error === 'network'){
-      errDelay = 1500; toast('Voice follow needs the internet (Chrome sends the audio to Google). Retrying…', 5000);
+      errDelay = 1500; toast('Voice follow needs the internet. Retrying…', 5000);
     } else if (e.error === 'language-not-supported'){
       stopListening(); toast('That language is not available. Pick another in ⚙︎.', 7000);
     }
@@ -930,7 +965,7 @@ function autoStep(t){
 }
 
 function toggleRun(){
-  if (S.mode === 'voice') listening ? stopListening() : startListening();
+  if (S.mode === 'voice') listening ? stopListening() : startListening(true);
   else autoOn ? stopAuto() : startAuto();
 }
 function stopAll(){ stopListening(); stopAuto(); }
@@ -1083,7 +1118,7 @@ renderList();
 updateDocUI();
 if (location.hash === '#prompt') openPrompter(store.get('cur', 0)); // loads the doc first
 else { scriptEl.focus(); if (S.docUrl) syncDoc({ loud:true }); }
-if (!SR) setTimeout(() => toast('Open this page in Google Chrome so it can follow your voice.', 7000), 400);
+if (!SR) setTimeout(() => toast(isIOS ? 'Voice follow isn’t available in this browser. On the iPad, open this page in Safari.' : 'Open this page in Google Chrome so it can follow your voice.', 7000), 400);
 
 // test hook: tp.say("words you would speak") feeds the matcher as if heard
 window.tp = {
