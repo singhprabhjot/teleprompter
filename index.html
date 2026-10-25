@@ -203,7 +203,6 @@ html{touch-action:manipulation}
         <option value="en-CA">English (Canada)</option>
         <option value="en-AU">English (Australia)</option>
       </select></div>
-    <div class="row"><label for="autoFind">Jump to the answer I start saying</label><input id="autoFind" type="checkbox"></div>
     <div class="row"><label for="showHeard">Show what it hears</label><input id="showHeard" type="checkbox"></div>
     <div class="row"><label for="mirror">Mirror text</label><input id="mirror" type="checkbox"></div>
     <hr>
@@ -251,7 +250,7 @@ I measured where the time went, fixed the three slowest parts, and brought it un
 
 // The Google Doc the answers come from unless this browser was unlinked from it.
 const DEFAULT_DOC = 'https://docs.google.com/document/d/1JQ85zXCVrGll95KLjLDxMi7M3-8vQ7iOInH2y_k5b10/edit';
-const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', autoFind:true, showHeard:true, mirror:false, docUrl:DEFAULT_DOC, docUnlinked:false, stress:'on', learn:false };
+const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', showHeard:true, mirror:false, docUrl:DEFAULT_DOC, docUnlinked:false, stress:'on', learn:false };
 let S = Object.assign({}, DEFAULTS, store.get('settings', {}));
 if (!S.docUrl && !S.docUnlinked) S.docUrl = DEFAULT_DOC;
 const saveSettings = () => store.set('settings', S);
@@ -852,25 +851,9 @@ function follow(tail){
     markHeard(tail, r.end);
     if (r.end + 1 !== pos) setPos(r.end + 1);
     if (run && pos >= words.length) finishRun();   // read to the end of the answer
-    return;
   }
-  if (S.autoFind && answers.length > 1 && (!r || r.score < 2.5)) globalFind(tail);
-}
-function globalFind(tail){
-  let best = null, second = 0;
-  answers.forEach((a, k) => {
-    if (k === cur) return;
-    const seq = a.titleNorms.concat(a.norms);
-    const r = align(tail, seq, 0, seq.length, null);
-    if (!r) return;
-    if (!best || r.score > best.score){ second = best ? best.score : second; best = { ...r, k, tl:a.titleNorms.length }; }
-    else if (r.score > second) second = r.score;
-  });
-  if (best && best.score >= 8 && best.score - second >= 2){
-    switchAnswer(best.k, { keepHearing:true });
-    setPos(Math.max(0, best.end - best.tl + 1), { instant:true });
-    toast('Switched to: ' + answers[best.k].title);
-  }
+  // Only the question you picked is ever followed: speech that matches another answer is ignored,
+  // never a reason to switch.
 }
 
 /* ---------- speech recognition (Chrome) ---------- */
@@ -993,7 +976,7 @@ function applySettings(){
   r.setProperty('--fs', S.fs + 'px'); r.setProperty('--w', S.w + 'px'); r.setProperty('--readline', S.rl + 'vh');
   textEl.classList.toggle('mirror', !!S.mirror);
   $('#speed').value = S.speed; $('#fs').value = S.fs; $('#w').value = S.w; $('#rl').value = S.rl;
-  $('#lang').value = S.lang; $('#autoFind').checked = !!S.autoFind; $('#showHeard').checked = !!S.showHeard; $('#mirror').checked = !!S.mirror;
+  $('#lang').value = S.lang; $('#showHeard').checked = !!S.showHeard; $('#mirror').checked = !!S.mirror;
   [...$('#modeSeg').children].forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
   [...$('#stressSeg').children].forEach(b => b.classList.toggle('on', (b.dataset.stress === 'off') === (S.stress === 'off')));
   $('#speedRow').style.display = S.mode === 'auto' ? '' : 'none';
@@ -1013,7 +996,7 @@ $('#stressSeg').addEventListener('click', e => {
 });
 const bindRange = (id, key) => $(id).addEventListener('input', e => { S[key] = +e.target.value; saveSettings(); applySettings(); });
 bindRange('#speed', 'speed'); bindRange('#fs', 'fs'); bindRange('#w', 'w'); bindRange('#rl', 'rl');
-['autoFind', 'showHeard', 'mirror'].forEach(k => $('#' + k).addEventListener('change', e => { S[k] = e.target.checked; saveSettings(); applySettings(); }));
+['showHeard', 'mirror'].forEach(k => $('#' + k).addEventListener('change', e => { S[k] = e.target.checked; saveSettings(); applySettings(); }));
 $('#lang').addEventListener('change', e => {
   S.lang = e.target.value; saveSettings();
   if (listening){ stopListening(); setTimeout(startListening, 250); }
