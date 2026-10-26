@@ -31,9 +31,9 @@ Voice follow uses Chrome's built-in speech recognition, which needs the internet
 To run it locally instead, double-click `Start Teleprompter.command` (serves it on http://localhost:8777).
 
 **Mock interview** (sidebar → + Ask a question): ask a question out loud; after a short silence it goes to
-ChatGPT, and the answer opens as short points (middle) beside the full answer to read (right). The switch in the top
+ChatGPT, and the answer opens as cheat notes (middle: labelled sections of short bullets) beside the full answer to read (right). The switch in the top
 bar decides what the microphone is for: **Question**, **Answer** (the reading) or **Auto** (question → reading →
-next question). **Points only** hides the full text so he speaks from the points. Answers come from **ChatGPT, Claude or Grok** (⚙︎ Settings → Mock interview → Answers come from); each keeps its
+next question). **Notes only** hides the full text so he speaks from the notes. Answers come from **ChatGPT, Claude or Grok** (⚙︎ Settings → Mock interview → Answers come from); each keeps its
 own API key in that browser. Claude runs on Claude Opus 5.5 through Anthropic's SDK. **Scan QR** fills a key from a QR
 code: on a computer, paste the key and tap **Show as QR code**, then scan it with the iPad. The context box is sent with
 every question.
