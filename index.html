@@ -1267,6 +1267,8 @@ async function submitQuestion(text){
     saveMock();
     answers = buildAnswers();
     ask = null;
+    // asked in Question mode: the answer is up, so the microphone now follows the reading (still listening)
+    if (S.miMode === 'question'){ S.miMode = 'answer'; saveSettings(); }
     switchAnswer(answers.length - 1);                     // opens it with its points
   } catch (err){
     if (ctrl !== gptCtrl) return;
