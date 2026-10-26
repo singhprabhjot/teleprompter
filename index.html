@@ -1539,7 +1539,17 @@ function setMiMode(m){
   }
   updateMiUI(); renderAsk();
 }
-$('#miSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setMiMode(b.dataset.mi); });
+$('#miSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.mi === 'question') askFresh(); else setMiMode(b.dataset.mi);
+});
+// Question: listen for a new question now. Tapping it again throws away what was heard (or is being answered) and starts over.
+function askFresh(){
+  if (S.miMode !== 'question'){ S.miMode = 'question'; saveSettings(); }
+  beginAsk(true);
+  if (!listening) startListening(true);   // the tap itself may turn the microphone on (Safari needs one)
+  updateMiUI(); renderAsk();
+}
 $('#viewSeg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   S.miView = b.dataset.view === 'only' ? 'only' : 'split'; saveSettings();
