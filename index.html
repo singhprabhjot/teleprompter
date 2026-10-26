@@ -160,7 +160,7 @@ html{touch-action:manipulation}
 /* ---------- Mock interview: you ask out loud → the AI answers → he reads it ---------- */
 :root{--ptsW:0px}
 body.mi.mi-answer.mi-split{--ptsW:300px}
-#miSeg,#miStatus,#viewSeg,#points,#askView,#miFoot{display:none}
+#miSeg,#miStatus,#viewSeg,#points,#askView{display:none}
 body.mi #miSeg,body.mi.mi-answer #viewSeg{display:flex}
 body.mi #miStatus{display:block}
 body.mi #editBtn,body.mi #learnSeg,body.mi #timer,body.mi #popBtn,body.mi #trickyBtn,body.mi .heard{display:none !important}
@@ -207,11 +207,6 @@ body.mi.mi-ask #askView{display:flex}
 .akHint.err{color:#fca5a5}
 .akBtns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 .akBtns button{height:44px;padding:0 20px;border-radius:11px;font-size:15px}
-#miFoot{position:fixed;left:calc(var(--sideW) + var(--ptsW));right:0;bottom:0;z-index:5;justify-content:space-between;align-items:center;gap:12px;
-  padding:12px 22px;border-top:1px solid #1d2024;background:var(--bg)}
-body.mi.mi-answer #miFoot{display:flex}
-#miFoot span{font-size:14px;color:var(--muted)}
-#miFoot button{height:44px;padding:0 18px;border-radius:11px;font-size:15px;flex:none}
 .qsh{display:flex;justify-content:space-between;align-items:center;padding:12px 10px 6px;color:var(--muted);font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
 .qsh button{background:transparent;border:0;color:var(--muted);font-size:12px;padding:2px 6px;text-transform:none;letter-spacing:0}
 .qi.ask{border:1px dashed var(--accent);color:var(--accent)}
@@ -236,7 +231,6 @@ body.mi #miDock{display:flex}
 body.mi.mi-answer.mi-split #miDock{left:var(--sideW);bottom:0;width:300px;border:0;border-top:1px solid var(--line);border-right:1px solid var(--line);
   border-radius:0;box-shadow:none;background:#121417}
 body.mi.mi-answer.mi-split #points{padding-bottom:150px}
-body.mi.mi-answer.mi-only #miDock{bottom:84px}
 body.mi.mi-only #points{padding-bottom:200px}
 .mdcap{font-size:11px;font-weight:650;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;padding:0 2px}
 #miDock #miSeg{border-color:#3a3f46;border-radius:13px}
@@ -329,7 +323,6 @@ body.mi.mi-only #points{padding-bottom:200px}
     <p id="akHint" class="akHint"></p>
     <div id="akBtns" class="akBtns"></div>
   </section>
-  <div id="miFoot"><span id="miFootText">When he reaches the end, it waits for your next question</span><button id="nextQ">Next question</button></div>
   <div id="scrim" class="scrim hidden"></div>
   <aside id="side" class="side" aria-label="Questions">
     <div class="sh"><span>Questions</span><button id="sideClose" title="Hide the questions" aria-label="Hide the questions">⟨</button></div>
@@ -1525,8 +1518,6 @@ function updateMiUI(){
     : micFor() === 'reading' ? 'reading' : 'ready for your next question';
   st.append('Now: ');
   const b = document.createElement('b'); b.textContent = listening ? now : 'tap Listen'; st.appendChild(b);
-  $('#miFootText').textContent = S.miMode === 'auto' ? 'When he reaches the end, it waits for your next question'
-    : S.miMode === 'question' ? 'Ask the next question whenever you’re ready' : 'Answer mode: the microphone follows the reading';
 }
 function setMiMode(m){
   if (S.miMode === m) return;
@@ -1556,7 +1547,6 @@ $('#viewSeg').addEventListener('click', e => {
   updateMiUI(); updatePoints();
   if (words.length && S.mode === 'voice') requestAnimationFrame(() => scrollToPos(true));
 });
-$('#nextQ').onclick = () => beginAsk(true);
 // settings for the mock interview
 // settings: which AI, its key, test it
 function renderAiUI(){
