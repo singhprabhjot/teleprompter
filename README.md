@@ -29,3 +29,9 @@ instead; that browser then stays unlinked.
 Voice follow uses Chrome's built-in speech recognition, which needs the internet.
 
 To run it locally instead, double-click `Start Teleprompter.command` (serves it on http://localhost:8777).
+
+**Mock interview** (sidebar → + Ask a question): ask a question out loud; after a short silence it goes to
+ChatGPT, and the answer opens as short points (middle) beside the full answer to read (right). The switch in the top
+bar decides what the microphone is for: **Question**, **Answer** (the reading) or **Auto** (question → reading →
+next question). **Points only** hides the full text so he speaks from the points. Needs a ChatGPT (OpenAI) API key,
+pasted once in ⚙︎ Settings → Mock interview; it stays in that browser. The context box there is sent with every question.
