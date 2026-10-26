@@ -1297,7 +1297,9 @@ function answerPrompt(){
     'Someone is practising speaking out loud. A question was just asked aloud; write the answer they will read aloud from a teleprompter.',
     'Reply with JSON only, shaped {"points": [...], "paragraphs": [...]}.',
     `"paragraphs": the full answer in 3 to 5 short paragraphs, about ${n} words in total, in natural spoken English. Plain sentences only: no lists, headings, markdown, emoji or symbols.`,
-    '"points": one short cue for each paragraph, 3 to 7 words, in the same order, so a glance shows what to say next.',
+    '"points": one talking point for each paragraph, in the same order: what that paragraph actually says, in 4 to 9 words, like a note on a cue card, so a glance tells the speaker what to say next.',
+    'Use the real content in each point: the names, facts, numbers or the example itself. Never a label of what the paragraph does.',
+    'For example, for "What is photosynthesis?": good points are "Plants turn sunlight into their own food", "Water, air and sunlight make sugar", "Gives off the oxygen we breathe", "Like a leaf\'s solar-powered kitchen". Bad points are "Simple definition", "How it works", "Why it matters", "Close with an example".',
     (S.miCtx || '').trim() ? 'Context from the person running the session (follow it):\n' + S.miCtx.trim() : ''
   ].filter(Boolean).join('\n');
 }
@@ -1307,6 +1309,17 @@ async function askGPT(q, signal){
   return S.ai === 'claude' ? askClaude(sys, q, signal) : askOpenAICompatible(S.ai === 'grok' ? 'grok' : 'chatgpt', sys, q, signal);
 }
 
+const GENERIC_CUE = new Set(`simple definition define defining what does why how close closing conclusion conclude summary summarize summarise
+  introduction intro opening overview example examples background explanation explain benefit benefits point points main key idea ideas
+  works work start end final finally first second third last step steps part reason reasons matters matter`.split(/\s+/));
+// "Why companies use it", "How it works", "Close with example": describes the paragraph instead of saying it
+const LABEL_START = /^(why|what|how|when|where|who|which|close|closing|start|end|intro|introduc|explain|describe|define|definition|summar|conclu|example\b(?!\s*:))/i;
+// the paragraph's first sentence, cut to a cue-card length
+function cueFrom(p){
+  const first = ((p.match(/^.*?[.!?](\s|$)/) || [p])[0]).replace(/^(so|well|basically|okay|ok)[,\s]+/i, '').trim().replace(/[.!?]$/, '');
+  const w = first.split(/\s+/);
+  return w.length > 9 ? w.slice(0, 8).join(' ') + '…' : first;
+}
 function normAnswer(x){
   let o = x;
   if (typeof x === 'string'){
@@ -1316,8 +1329,14 @@ function normAnswer(x){
   const clean = t => String(t || '').replace(/[*#_`<>]/g, '').replace(/\s+/g, ' ').trim();
   const paras = (Array.isArray(o?.paragraphs) ? o.paragraphs : Array.isArray(o?.paras) ? o.paras : o?.answer ? [o.answer] : []).map(clean).filter(Boolean);
   if (!paras.length) throw new Error('The answer came back empty. Try again.');
-  let points = (Array.isArray(o?.points) ? o.points : []).map(clean).filter(Boolean);
-  points = paras.map((p, i) => points[i] || p.split(' ').slice(0, 6).join(' ') + '…');
+  const given = (Array.isArray(o?.points) ? o.points : []).map(clean);
+  // a point must say something its paragraph says; a bare label ("Simple definition") becomes a cue from the paragraph
+  const points = paras.map((p, i) => {
+    const pt = given[i];
+    if (!pt || LABEL_START.test(pt)) return cueFrom(p);
+    const pw = toWords(p), said = toWords(pt).filter(w => w.length >= 3 && !SMALL.has(w) && !GENERIC_CUE.has(w));
+    return said.some(w => pw.some(x => x === w || sim(w, x) > 0)) ? pt : cueFrom(p);
+  });
   return { points, paras };
 }
 
