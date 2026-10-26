@@ -33,5 +33,7 @@ To run it locally instead, double-click `Start Teleprompter.command` (serves it 
 **Mock interview** (sidebar → + Ask a question): ask a question out loud; after a short silence it goes to
 ChatGPT, and the answer opens as short points (middle) beside the full answer to read (right). The switch in the top
 bar decides what the microphone is for: **Question**, **Answer** (the reading) or **Auto** (question → reading →
-next question). **Points only** hides the full text so he speaks from the points. Needs a ChatGPT (OpenAI) API key,
-pasted once in ⚙︎ Settings → Mock interview; it stays in that browser. The context box there is sent with every question.
+next question). **Points only** hides the full text so he speaks from the points. Answers come from **ChatGPT, Claude or Grok** (⚙︎ Settings → Mock interview → Answers come from); each keeps its
+own API key in that browser. Claude runs on Claude Opus 5.5 through Anthropic's SDK. **Scan QR** fills a key from a QR
+code: on a computer, paste the key and tap **Show as QR code**, then scan it with the iPad. The context box is sent with
+every question.

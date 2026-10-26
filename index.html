@@ -157,7 +157,7 @@ html{touch-action:manipulation}
   padding:9px 14px;border-radius:10px;font-size:14px;max-width:min(560px,calc(100vw - 32px));text-align:center;box-shadow:0 8px 30px #0008}
 .notice{max-width:var(--w);margin:0 auto;padding:0 28px;color:var(--muted);font-size:20px}
 
-/* ---------- Mock interview: you ask out loud → ChatGPT answers → he reads it ---------- */
+/* ---------- Mock interview: you ask out loud → the AI answers → he reads it ---------- */
 :root{--ptsW:0px}
 body.mi.mi-answer.mi-split{--ptsW:300px}
 #miSeg,#miStatus,#viewSeg,#points,#askView,#miFoot{display:none}
@@ -227,6 +227,48 @@ body.mi.mi-answer #miFoot{display:flex}
 .gstat.ok{color:#86efac}.gstat.err{color:#fca5a5}
 #miCtx{width:100%;box-sizing:border-box;background:#0e0f11;border:1px solid #3a3f46;border-radius:8px;padding:8px 10px;color:var(--text);font-size:14px;line-height:1.45;resize:vertical}
 #miWaitV{color:var(--accent);font-weight:600}
+
+/* ---------- choosing the AI, and moving its key by QR code ---------- */
+.aiseg{width:100%}
+.aiseg button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:8px 6px;font-size:14px}
+.aiseg i{width:7px;height:7px;border-radius:50%;background:transparent}
+.aiseg i.has{background:#86efac}
+.aiseg button.on i.has{background:#1a1400}
+.aihint{font-size:12px;color:var(--muted);margin:6px 0 2px;line-height:1.45}
+.gline{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.gline a{font-size:13px;color:var(--accent);white-space:nowrap}
+.keyrow button{white-space:nowrap}
+.scanbtn{border-color:var(--accent);color:var(--accent)}
+.overlay{position:fixed;inset:0;z-index:20;background:#000}
+#scanVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.vf{position:absolute;left:50%;top:50%;width:min(290px,60vw);height:min(290px,60vw);transform:translate(-50%,-50%);pointer-events:none}
+.vf i{position:absolute;width:46px;height:46px;border:5px solid var(--accent)}
+.vf i:nth-child(1){left:0;top:0;border-right:0;border-bottom:0;border-radius:14px 0 0 0}
+.vf i:nth-child(2){right:0;top:0;border-left:0;border-bottom:0;border-radius:0 14px 0 0}
+.vf i:nth-child(3){left:0;bottom:0;border-right:0;border-top:0;border-radius:0 0 0 14px}
+.vf i:nth-child(4){right:0;bottom:0;border-left:0;border-top:0;border-radius:0 0 14px 0}
+.sv-h{position:absolute;left:0;right:0;top:0;min-height:76px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);
+  padding:10px 80px;box-sizing:border-box;text-align:center}
+.sv-h button{position:absolute;left:20px;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:12px;font-size:18px;padding:0}
+.sv-h b{display:block;font-size:18px;color:#fff}
+.sv-h span{font-size:14px;color:#c9ccd1}
+.sv-card{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);width:min(560px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);
+  border-radius:18px;padding:16px 18px;box-sizing:border-box;display:flex;align-items:center;gap:14px;flex-wrap:wrap;box-shadow:0 18px 50px #0009}
+.sv-card .ok{flex:none;width:44px;height:44px;border-radius:50%;background:#133a24;color:#86efac;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}
+.sv-t{flex:1;min-width:160px}
+.sv-t b{display:block;color:#fff;font-size:16px}
+.sv-t span{color:var(--muted);font-size:14px}
+.sv-card button{height:44px;padding:0 14px;border-radius:11px}
+.qrv{background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center}
+.qr-card{width:min(600px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;
+  padding:24px 28px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+.qr-card h2{margin:0;font-size:22px;color:#fff}
+.qr-sub{color:var(--muted);font-size:15px}
+.qr-box{background:#fff;padding:14px;border-radius:10px;line-height:0}
+.qr-box svg{width:min(300px,62vw);height:min(300px,62vw);display:block}
+.qr-card ol{margin:0;padding-left:22px;text-align:left;font-size:16px;line-height:1.6}
+.qr-note{margin:0;font-size:13px;color:var(--muted);line-height:1.5;max-width:480px}
+.qr-card .primary{height:46px;padding:0 28px;border-radius:12px;font-size:16px}
 </style>
 </head>
 <body>
@@ -293,12 +335,16 @@ body.mi.mi-answer #miFoot{display:flex}
   </header>
   <div id="settings" class="settings hidden">
     <div class="mh">Mock interview</div>
-    <label class="ml" for="gptKey">ChatGPT key</label>
-    <div class="keyrow"><input id="gptKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"><button id="gptTest">Test</button></div>
-    <div id="gptStatus" class="gstat"></div>
+    <span class="ml">Answers come from</span>
+    <div class="seg aiseg" id="aiSeg" role="group" aria-label="Answers come from"><button data-ai="chatgpt">ChatGPT<i></i></button><button data-ai="claude">Claude<i></i></button><button data-ai="grok">Grok<i></i></button></div>
+    <div class="aihint">Each one keeps its own key, so you can switch any time. A dot means its key is added.</div>
+    <label class="ml" for="gptKey" id="keyLabel">ChatGPT key</label>
+    <div class="keyrow"><input id="gptKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"><button id="scanKey" class="scanbtn">Scan QR</button><button id="gptTest">Test</button></div>
+    <div class="gline"><span id="gptStatus" class="gstat"></span><a href="#" id="showQR">Show as QR code</a></div>
+    <div id="keyWhere" class="aihint"></div>
     <div class="row"><label>Answer length</label><div class="seg" id="lenSeg"><button data-len="short">30 s</button><button data-len="medium">1 min</button><button data-len="long">2 min</button></div></div>
     <div class="row"><label for="miWait">Question ends after <span id="miWaitV">1.5 s</span> of silence</label><input id="miWait" type="range" min="1" max="4" step="0.5"></div>
-    <label class="ml" for="miCtx">Context for ChatGPT (sent with every question)</label>
+    <label class="ml" for="miCtx">Context (sent with every question)</label>
     <textarea id="miCtx" rows="4"></textarea>
     <hr>
     <div class="row"><label>Mode</label>
@@ -336,6 +382,32 @@ body.mi.mi-answer #miFoot{display:flex}
 
 <div id="toast" class="toast hidden"></div>
 
+<!-- ============ KEY BY QR CODE ============ -->
+<div id="scanView" class="overlay hidden" role="dialog" aria-label="Scan the key">
+  <video id="scanVideo" playsinline muted autoplay></video>
+  <div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <header class="sv-h">
+    <button id="scanClose" aria-label="Close the scanner">✕</button>
+    <div><b>Scan the key</b><span id="scanMsg">Point the camera at the QR code on your computer’s screen</span></div>
+  </header>
+  <section id="scanFound" class="sv-card hidden" aria-live="polite">
+    <span class="ok" aria-hidden="true">✓</span>
+    <div class="sv-t"><b id="scanWhat"></b><span id="scanMasked"></span></div>
+    <button id="scanAgain">Scan again</button>
+    <button id="scanUse" class="primary">Use this key</button>
+  </section>
+</div>
+<div id="qrView" class="overlay qrv hidden" role="dialog" aria-label="Move this key to another device">
+  <section class="qr-card">
+    <h2>Move this key to your iPad</h2>
+    <div id="qrWhat" class="qr-sub"></div>
+    <div id="qrBox" class="qr-box" role="img" aria-label="QR code holding the key"></div>
+    <ol><li>On the iPad, open ⚙︎ Settings and tap <b>Scan QR</b>.</li><li>Point the iPad’s camera at this code.</li></ol>
+    <p class="qr-note">This code is made on this page; the key isn’t sent anywhere. Anyone who scans it gets the key, so close it when you’re done.</p>
+    <button id="qrDone" class="primary">Done</button>
+  </section>
+</div>
+
 <script>
 (() => {
 'use strict';
@@ -365,10 +437,15 @@ I measured where the time went, fixed the three slowest parts, and brought it un
 // The Google Doc the answers come from unless this browser was unlinked from it.
 const DEFAULT_DOC = 'https://docs.google.com/document/d/1JQ85zXCVrGll95KLjLDxMi7M3-8vQ7iOInH2y_k5b10/edit';
 const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', showHeard:true, mirror:false, docUrl:DEFAULT_DOC, docUnlinked:false, stress:'on', learn:false,
-  miMode:'auto', miView:'split', miLen:'medium', miWait:1.5, gptKey:'', gptModel:'',
+  miMode:'auto', miView:'split', miLen:'medium', miWait:1.5, ai:'chatgpt', keys:{}, models:{},
   miCtx:'I am interviewing my son for practice. Answer as him, in the first person, in simple words a student would say.' };
 let S = Object.assign({}, DEFAULTS, store.get('settings', {}));
 if (!S.docUrl && !S.docUnlinked) S.docUrl = DEFAULT_DOC;
+// one key per AI; an older ChatGPT-only key moves over
+S.keys = { ...(S.keys || {}) }; S.models = { ...(S.models || {}) };
+if (S.gptKey && !S.keys.chatgpt) S.keys.chatgpt = S.gptKey;
+if (S.gptModel && !S.models.chatgpt) S.models.chatgpt = S.gptModel;
+delete S.gptKey; delete S.gptModel;
 const saveSettings = () => store.set('settings', S);
 
 /* ---------- words ---------- */
@@ -1081,9 +1158,9 @@ function follow(tail, finalInTail = tail.length){
   // never a reason to switch.
 }
 
-/* ---------- Mock interview: you ask out loud → ChatGPT answers → he reads it ---------- */
+/* ---------- Mock interview: you ask out loud → the AI answers → he reads it ---------- */
 // mi.on: a mock-interview screen is showing (the ask screen, or one of its answers).
-// mi.view: 'ask' (waiting for / hearing the question), 'thinking' (asking ChatGPT), 'answer' (an answer on screen).
+// mi.view: 'ask' (waiting for / hearing the question), 'thinking' (asking the AI), 'answer' (an answer on screen).
 // S.miMode says what the microphone is for: 'question', 'answer' (the reading), or 'auto' (question → reading → question …).
 const mi = { on:false, view:'answer', err:'', q:'', since:0 };
 let mockItems = store.get('mock', []) || [];
@@ -1165,7 +1242,7 @@ async function submitQuestion(text){
   const q = tidyQuestion(text);
   if (toWords(q).length < 2) return;                      // a cough or one stray word: keep listening
   mi.q = q;
-  if (!S.gptKey && !fakeGPT){ mi.err = 'nokey'; setMi('ask'); return; }
+  if (!keyOf(S.ai) && !fakeGPT){ mi.err = 'nokey'; setMi('ask'); return; }
   mi.err = ''; setMi('thinking');
   gptCtrl?.abort();
   const ctrl = gptCtrl = new AbortController();
@@ -1188,40 +1265,34 @@ async function submitQuestion(text){
   }
 }
 
-/* ChatGPT: the points and the full answer together, as JSON */
-async function askGPT(q, signal){
-  if (fakeGPT) return normAnswer(await fakeGPT(q));
-  const model = await pickModel(signal);
+/* The AI that writes the answer: ChatGPT, Claude or Grok. Each keeps its own key on this device. */
+const AI_NAME = { chatgpt:'ChatGPT', claude:'Claude', grok:'Grok' };
+const AI_HOLDER = { chatgpt:'sk-…', claude:'sk-ant-…', grok:'xai-…' };
+const AI_WHERE = {
+  chatgpt:'Get a key at platform.openai.com → API keys. The account needs a little credit.',
+  claude:'Get a key at platform.claude.com → API keys. The account needs a little credit.',
+  grok:'Get a key at console.x.ai → API keys. The account needs a little credit.'
+};
+const keyOf = ai => (S.keys && S.keys[ai]) || '';
+const aiOfKey = k => /^sk-ant-/.test(k) ? 'claude' : /^xai-/.test(k) ? 'grok' : /^sk-/.test(k) ? 'chatgpt' : null;   // from how the key starts
+const ANSWER_SCHEMA = { type:'object', additionalProperties:false, required:['points', 'paragraphs'],
+  properties:{ points:{ type:'array', items:{ type:'string' } }, paragraphs:{ type:'array', items:{ type:'string' } } } };
+function answerPrompt(){
   const n = MI_WORDS[S.miLen] || 140;
-  const sys = [
+  return [
     'Someone is practising speaking out loud. A question was just asked aloud; write the answer they will read aloud from a teleprompter.',
     'Reply with JSON only, shaped {"points": [...], "paragraphs": [...]}.',
     `"paragraphs": the full answer in 3 to 5 short paragraphs, about ${n} words in total, in natural spoken English. Plain sentences only: no lists, headings, markdown, emoji or symbols.`,
     '"points": one short cue for each paragraph, 3 to 7 words, in the same order, so a glance shows what to say next.',
     (S.miCtx || '').trim() ? 'Context from the person running the session (follow it):\n' + S.miCtx.trim() : ''
   ].filter(Boolean).join('\n');
-  const body = { model, messages:[{ role:'system', content:sys }, { role:'user', content:q }],
-                 response_format:{ type:'json_object' }, max_completion_tokens:2000 };
-  if (/^(gpt-5|o\d)/.test(model)) body.reasoning_effort = 'low';
-  for (let tries = 0; tries < 3; tries++){
-    const r = await fetch('https://api.openai.com/v1/chat/completions', { method:'POST', signal,
-      headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + S.gptKey }, body:JSON.stringify(body) });
-    const j = await r.json().catch(() => ({}));
-    if (r.ok) return normAnswer(j.choices?.[0]?.message?.content || '');
-    const m = j?.error?.message || '';
-    // an older or newer model that doesn't take one of these settings: drop it and ask again
-    const drop = ['reasoning_effort', 'response_format', 'max_completion_tokens'].find(k => r.status === 400 && m.includes(k) && k in body);
-    if (drop){ delete body[drop]; continue; }
-    throw new Error(gptError(r.status, m));
-  }
-  throw new Error('ChatGPT didn’t accept the request. Try again.');
 }
-function gptError(status, m){
-  if (status === 401) return 'The ChatGPT key was refused. Check it in ⚙︎ Settings.';
-  if (status === 429) return /quota|billing|credit/i.test(m) ? 'The ChatGPT account has run out of credit (Billing on platform.openai.com).' : 'ChatGPT is busy right now. Try again in a moment.';
-  if (status === 404 || /model/i.test(m)){ S.gptModel = ''; saveSettings(); return 'That ChatGPT model isn’t available on this key. Try again.'; }
-  return m || ('ChatGPT error ' + status + '. Try again.');
+async function askGPT(q, signal){
+  if (fakeGPT) return normAnswer(await fakeGPT(q));
+  const sys = answerPrompt();
+  return S.ai === 'claude' ? askClaude(sys, q, signal) : askOpenAICompatible(S.ai === 'grok' ? 'grok' : 'chatgpt', sys, q, signal);
 }
+
 function normAnswer(x){
   let o = x;
   if (typeof x === 'string'){
@@ -1230,24 +1301,96 @@ function normAnswer(x){
   }
   const clean = t => String(t || '').replace(/[*#_`<>]/g, '').replace(/\s+/g, ' ').trim();
   const paras = (Array.isArray(o?.paragraphs) ? o.paragraphs : Array.isArray(o?.paras) ? o.paras : o?.answer ? [o.answer] : []).map(clean).filter(Boolean);
-  if (!paras.length) throw new Error('ChatGPT sent back an empty answer. Try again.');
+  if (!paras.length) throw new Error('The answer came back empty. Try again.');
   let points = (Array.isArray(o?.points) ? o.points : []).map(clean).filter(Boolean);
   points = paras.map((p, i) => points[i] || p.split(' ').slice(0, 6).join(' ') + '…');
   return { points, paras };
 }
-// the newest "-mini" model this key can use (cheap and quick), remembered on this device
-async function pickModel(signal){
-  if (S.gptModel) return S.gptModel;
-  const ids = await listModels(signal);
-  const minis = ids.filter(x => /^gpt-\d+(\.\d+)?-mini$/.test(x)).sort((a, b) => parseFloat(b.slice(4)) - parseFloat(a.slice(4)));
-  const id = minis[0] || (ids.includes('gpt-4o-mini') ? 'gpt-4o-mini' : ids.find(x => /^gpt-/.test(x)) || 'gpt-4o-mini');
-  S.gptModel = id; saveSettings();
+
+// Claude, through Anthropic's own SDK, loaded only when Claude is used
+const CLAUDE_MODEL = 'claude-opus-5-5';
+let anthropicLib = null;
+async function claudeClient(){
+  if (!anthropicLib) anthropicLib = (await import('https://esm.sh/@anthropic-ai/sdk@0.133.0')).default;
+  return new anthropicLib({ apiKey:keyOf('claude'), dangerouslyAllowBrowser:true });   // the key goes only to Anthropic
+}
+async function askClaude(sys, q, signal){
+  const client = await claudeClient();
+  try {
+    const res = await client.beta.messages.create({
+      model:CLAUDE_MODEL, max_tokens:16000,
+      betas:['server-side-fallback-2026-07-01'], fallbacks:'default',   // if Claude declines, the API reroutes the request itself
+      system:sys,
+      output_config:{ effort:'low', format:{ type:'json_schema', schema:ANSWER_SCHEMA } },   // low effort = a quick answer
+      messages:[{ role:'user', content:q }]
+    }, { signal });
+    if (res.stop_reason === 'refusal') throw new Error('Claude didn’t answer that one. Try asking it a different way.');
+    return normAnswer(res.content.filter(b => b.type === 'text').map(b => b.text).join(''));
+  } catch (err){ throw claudeError(err); }
+}
+function claudeError(err){
+  const A = anthropicLib;
+  if (!A || !(err instanceof A.APIError) || (A.APIUserAbortError && err instanceof A.APIUserAbortError)) return err;
+  if (err instanceof A.AuthenticationError) return new Error('The Claude key was refused. Check it in ⚙︎ Settings.');
+  if (err.status === 403) return new Error(`This Claude key isn’t allowed to use ${CLAUDE_MODEL}.`);
+  if (err instanceof A.RateLimitError) return new Error('Claude is busy right now. Try again in a moment.');
+  if (/credit balance/i.test(err.message || '')) return new Error('The Claude account has run out of credit (Billing on platform.claude.com).');
+  return new Error('Claude: ' + (err.message || ('error ' + err.status)));
+}
+
+// ChatGPT and Grok share the same kind of API
+const OAI = {
+  chatgpt:{ base:'https://api.openai.com/v1', tok:'max_completion_tokens' },
+  grok:{ base:'https://api.x.ai/v1', tok:'max_tokens' }
+};
+const errText = j => j?.error?.message || (typeof j?.error === 'string' ? j.error : '') || '';
+async function askOpenAICompatible(ai, sys, q, signal){
+  const P = OAI[ai], model = await pickModel(ai, signal);
+  const body = { model, messages:[{ role:'system', content:sys }, { role:'user', content:q }], response_format:{ type:'json_object' } };
+  body[P.tok] = 2000;
+  if (ai === 'chatgpt' && /^(gpt-5|o\d)/.test(model)) body.reasoning_effort = 'low';
+  for (let tries = 0; tries < 4; tries++){
+    const r = await fetch(P.base + '/chat/completions', { method:'POST', signal,
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + keyOf(ai) }, body:JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return normAnswer(j.choices?.[0]?.message?.content || '');
+    const m = errText(j);
+    // a model that doesn't take one of these settings: drop it and ask again
+    const drop = ['reasoning_effort', 'response_format', 'max_completion_tokens', 'max_tokens'].find(k => r.status === 400 && m.includes(k) && k in body);
+    if (drop){ delete body[drop]; continue; }
+    throw new Error(aiError(ai, r.status, m));
+  }
+  throw new Error(AI_NAME[ai] + ' didn’t accept the request. Try again.');
+}
+function aiError(ai, status, m){
+  const n = AI_NAME[ai];
+  if (status === 401 || ((status === 400 || status === 403) && /api key|auth/i.test(m))) return `The ${n} key was refused. Check it in ⚙︎ Settings.`;
+  if (status === 429) return /quota|billing|credit/i.test(m) ? `The ${n} account has run out of credit.` : `${n} is busy right now. Try again in a moment.`;
+  if (status === 404 || /model/i.test(m)){ S.models = S.models || {}; S.models[ai] = ''; saveSettings(); return `That ${n} model isn’t available on this key. Try again.`; }
+  return m || `${n} error ${status}. Try again.`;
+}
+// a quick, current model this key can use, remembered on this device
+async function pickModel(ai, signal){
+  S.models = S.models || {};
+  if (S.models[ai]) return S.models[ai];
+  const ids = await listModels(ai, signal);
+  let id;
+  if (ai === 'grok'){
+    const ver = x => parseFloat((x.match(/^grok-(\d+(?:\.\d+)?)/) || [])[1] || 0);
+    const text = ids.filter(x => /^grok-/.test(x) && !/image|vision|imagine|embed|code|audio|voice/.test(x));
+    text.sort((a, b) => ver(b) - ver(a) || (/fast/.test(b) - /fast/.test(a)) || (/non-reasoning/.test(b) - /non-reasoning/.test(a)));
+    id = text[0] || ids[0] || 'grok-3-mini';
+  } else {
+    const minis = ids.filter(x => /^gpt-\d+(\.\d+)?-mini$/.test(x)).sort((a, b) => parseFloat(b.slice(4)) - parseFloat(a.slice(4)));
+    id = minis[0] || (ids.includes('gpt-4o-mini') ? 'gpt-4o-mini' : ids.find(x => /^gpt-/.test(x)) || 'gpt-4o-mini');
+  }
+  S.models[ai] = id; saveSettings();
   return id;
 }
-async function listModels(signal){
-  const r = await fetch('https://api.openai.com/v1/models', { headers:{ Authorization:'Bearer ' + S.gptKey }, signal });
+async function listModels(ai, signal){
+  const r = await fetch(OAI[ai].base + '/models', { headers:{ Authorization:'Bearer ' + keyOf(ai) }, signal });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(gptError(r.status, j?.error?.message || ''));
+  if (!r.ok) throw new Error(aiError(ai, r.status, errText(j)));
   return (j.data || []).map(m => m.id);
 }
 
@@ -1314,14 +1457,14 @@ function renderAsk(){
   btns.innerHTML = ''; hint.className = 'akHint'; icon.className = 'akIcon'; txt.textContent = '';
   const btn = (label, fn, primary) => { const b = document.createElement('button'); b.textContent = label; if (primary) b.className = 'primary'; b.onclick = fn; btns.appendChild(b); };
   if (mi.view === 'thinking'){
-    icon.className = 'akIcon spin'; lab.textContent = 'Getting the answer from ChatGPT';
+    icon.className = 'akIcon spin'; lab.textContent = 'Getting the answer from ' + AI_NAME[S.ai];
     txt.textContent = mi.q; hint.textContent = 'Usually 2 to 5 seconds. It writes short points and the full answer together.';
     btn('Cancel', cancelAsk);
     return;
   }
   if (mi.err === 'nokey'){
-    icon.className = 'akIcon idle'; lab.textContent = 'Add your ChatGPT key first';
-    txt.textContent = mi.q; hint.textContent = 'Open ⚙︎ Settings, paste the key under Mock interview, then tap Try again.';
+    icon.className = 'akIcon idle'; lab.textContent = `Add your ${AI_NAME[S.ai]} key first`;
+    txt.textContent = mi.q; hint.textContent = 'Open ⚙︎ Settings and paste the key (or tap Scan QR), then tap Try again.';
     btn('Open settings', () => { $('#settings').classList.remove('hidden'); $('#gptKey').focus(); }, true);
     btn('Try again', () => submitQuestion(mi.q));
     return;
@@ -1348,7 +1491,7 @@ function renderAsk(){
     icon.className = 'akIcon idle';
     hint.textContent = 'Tap Listen, then ask the question out loud.';
     btn('🎙 Listen', () => startListening(true), true);
-  } else hint.textContent = `The words appear as you speak. When you stop for ${fmtSec(S.miWait)}, the question goes to ChatGPT.`;
+  } else hint.textContent = `The words appear as you speak. When you stop for ${fmtSec(S.miWait)}, the question goes to ${AI_NAME[S.ai]}.`;
   if (t){ btn('Ask now', () => submitQuestion(ask.text), true); btn('Start again', () => beginAsk(true)); }
 }
 function updateMiUI(){
@@ -1386,14 +1529,123 @@ $('#viewSeg').addEventListener('click', e => {
 });
 $('#nextQ').onclick = () => beginAsk(true);
 // settings for the mock interview
-$('#gptKey').addEventListener('input', e => { S.gptKey = e.target.value.trim(); S.gptModel = ''; saveSettings(); $('#gptStatus').textContent = ''; });
-$('#gptTest').onclick = async () => {
-  const st = $('#gptStatus');
-  if (!S.gptKey){ st.textContent = 'Paste a key first.'; st.className = 'gstat err'; return; }
+// settings: which AI, its key, test it
+function renderAiUI(){
+  const ai = S.ai || 'chatgpt';
+  [...$('#aiSeg').children].forEach(b => { b.classList.toggle('on', b.dataset.ai === ai); b.querySelector('i').classList.toggle('has', !!keyOf(b.dataset.ai)); });
+  $('#keyLabel').textContent = AI_NAME[ai] + ' key';
+  const inp = $('#gptKey'); inp.placeholder = AI_HOLDER[ai];
+  if (document.activeElement !== inp) inp.value = keyOf(ai);
+  $('#keyWhere').textContent = AI_WHERE[ai];
+  $('#showQR').classList.toggle('hidden', !keyOf(ai));
+}
+function setKey(ai, k){
+  S.keys = { ...(S.keys || {}), [ai]:k };
+  S.models = { ...(S.models || {}), [ai]:'' };
+  saveSettings(); $('#gptStatus').textContent = ''; renderAiUI();
+}
+$('#aiSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.ai = b.dataset.ai; saveSettings(); $('#gptStatus').textContent = ''; renderAiUI(); updateMiUI(); renderAsk(); });
+$('#gptKey').addEventListener('input', e => setKey(S.ai, e.target.value.trim()));
+async function testKey(){
+  const st = $('#gptStatus'), ai = S.ai;
+  if (!keyOf(ai)){ st.textContent = 'Paste a key first.'; st.className = 'gstat err'; return; }
   st.textContent = 'Checking…'; st.className = 'gstat';
-  try { S.gptModel = ''; const m = await pickModel(); st.textContent = `✓ Working (${m}) · it stays on this device`; st.className = 'gstat ok'; }
-  catch (err){ st.textContent = err.message || 'That didn’t work.'; st.className = 'gstat err'; }
+  try {
+    let what;
+    // Claude: counting the tokens of a word checks the key and the model, and costs nothing
+    if (ai === 'claude'){ const c = await claudeClient(); await c.messages.countTokens({ model:CLAUDE_MODEL, messages:[{ role:'user', content:'Hello' }] }); what = 'Claude Opus 5.5'; }
+    else { S.models = { ...(S.models || {}), [ai]:'' }; what = await pickModel(ai); }
+    st.textContent = `✓ Working (${what}) · it stays on this device`; st.className = 'gstat ok';
+  } catch (err){
+    const e = ai === 'claude' ? claudeError(err) : err;
+    st.textContent = (e && e.message) || 'That didn’t work.'; st.className = 'gstat err';
+  }
+}
+$('#gptTest').onclick = testKey;
+
+/* moving a key between devices: the computer shows it as a QR code, the iPad scans it */
+const QR_MAKE = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+const QR_READ = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+const libs = {};
+function loadScript(src){
+  return libs[src] || (libs[src] = new Promise((ok, bad) => {
+    const s = document.createElement('script'); s.src = src; s.onload = ok;
+    s.onerror = () => { delete libs[src]; bad(new Error('Couldn’t load a part of the page. Check the internet connection.')); };
+    document.head.appendChild(s);
+  }));
+}
+const maskKey = k => k.length > 16 ? k.slice(0, 10) + '••••••••' + k.slice(-4) : '••••••••';
+async function showKeyQR(){
+  const ai = S.ai, k = keyOf(ai); if (!k) return;
+  try { await loadScript(QR_MAKE); } catch (err){ toast(err.message); return; }
+  const qr = window.qrcode(0, 'M'); qr.addData(k); qr.make();
+  $('#qrBox').innerHTML = qr.createSvgTag({ cellSize:8, margin:2, scalable:true });   // made here; the key is never sent anywhere
+  $('#qrWhat').textContent = `${AI_NAME[ai]} key · ${maskKey(k)}`;
+  hideSettings(); $('#qrView').classList.remove('hidden');
+}
+function closeKeyQR(){ $('#qrView').classList.add('hidden'); $('#qrBox').innerHTML = ''; }
+$('#showQR').onclick = e => { e.preventDefault(); showKeyQR(); };
+$('#qrDone').onclick = closeKeyQR;
+
+let scan = null;   // { stream, timer, found }
+const scanCanvas = document.createElement('canvas');
+async function openScanner(){
+  hideSettings();
+  $('#scanView').classList.remove('hidden');
+  $('#scanFound').classList.add('hidden');
+  const msg = $('#scanMsg'); msg.textContent = 'Point the camera at the QR code on your computer’s screen';
+  if (!navigator.mediaDevices?.getUserMedia){ msg.textContent = 'This browser can’t use the camera here.'; return; }
+  try {
+    await loadScript(QR_READ);
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } }, audio:false });
+    if ($('#scanView').classList.contains('hidden')){ stream.getTracks().forEach(t => t.stop()); return; }   // closed meanwhile
+    scan = { stream, timer:0, found:null };
+    const video = $('#scanVideo'); video.srcObject = stream;
+    await video.play().catch(() => {});
+    tickScan();
+  } catch (err){
+    msg.textContent = /NotAllowed|Permission|denied/i.test((err.name || '') + (err.message || ''))
+      ? (isIOS ? 'The camera is blocked. On the iPad: Settings → Apps → Safari → Camera → Allow, then try again.' : 'The camera is blocked. Allow the camera for this page, then try again.')
+      : (err.message || 'Couldn’t start the camera.');
+  }
+}
+function tickScan(){
+  if (!scan) return;
+  const video = $('#scanVideo');
+  if (video.readyState >= 2 && !scan.found && video.videoWidth){
+    const w = 640, h = Math.round(w * video.videoHeight / video.videoWidth);
+    scanCanvas.width = w; scanCanvas.height = h;
+    const ctx = scanCanvas.getContext('2d', { willReadFrequently:true });
+    ctx.drawImage(video, 0, 0, w, h);
+    const code = window.jsQR(ctx.getImageData(0, 0, w, h).data, w, h);
+    if (code && code.data) gotQR(code.data.trim());
+  }
+  scan.timer = setTimeout(tickScan, 150);
+}
+function gotQR(k){
+  const ai = aiOfKey(k);
+  if (!ai){ $('#scanMsg').textContent = 'That QR code isn’t a ChatGPT, Claude or Grok key.'; return; }
+  scan.found = { k, ai };
+  $('#scanWhat').textContent = `${AI_NAME[ai]} key found`;
+  $('#scanMasked').textContent = maskKey(k);
+  $('#scanFound').classList.remove('hidden');
+}
+function closeScanner(){
+  if (scan){ clearTimeout(scan.timer); scan.stream.getTracks().forEach(t => t.stop()); }
+  scan = null; $('#scanVideo').srcObject = null;
+  $('#scanView').classList.add('hidden');
+}
+$('#scanKey').onclick = openScanner;
+$('#scanClose').onclick = closeScanner;
+$('#scanAgain').onclick = () => { if (scan){ scan.found = null; $('#scanFound').classList.add('hidden'); } };
+$('#scanUse').onclick = () => {
+  const f = scan && scan.found; if (!f) return;
+  S.ai = f.ai; saveSettings(); setKey(f.ai, f.k);
+  closeScanner();
+  $('#settings').classList.remove('hidden'); renderAiUI(); updateMiUI();
+  testKey();   // check it straight away
 };
+
 $('#lenSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.miLen = b.dataset.len; saveSettings(); applySettings(); });
 $('#miWait').addEventListener('input', e => { S.miWait = +e.target.value; saveSettings(); applySettings(); });
 $('#miCtx').addEventListener('input', e => { S.miCtx = e.target.value; saveSettings(); });
@@ -1530,7 +1782,7 @@ function applySettings(){
   [...$('#stressSeg').children].forEach(b => b.classList.toggle('on', (b.dataset.stress === 'off') === (S.stress === 'off')));
   $('#speedRow').style.display = S.mode === 'auto' ? '' : 'none';
   if (!S.showHeard) heardEl.textContent = '';
-  if (document.activeElement !== $('#gptKey')) $('#gptKey').value = S.gptKey || '';
+  renderAiUI();
   if (document.activeElement !== $('#miCtx')) $('#miCtx').value = S.miCtx || '';
   [...$('#lenSeg').children].forEach(b => b.classList.toggle('on', b.dataset.len === (S.miLen || 'medium')));
   $('#miWait').value = S.miWait || 1.5; $('#miWaitV').textContent = (+S.miWait || 1.5) + ' s';
@@ -1601,7 +1853,7 @@ document.addEventListener('keydown', e => {
   else if (k === '-' || k === '_'){ S.fs = Math.max(18, S.fs - 3); saveSettings(); applySettings(); }
   else if (k === 'f' || k === 'F'){ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.(); }
   else if (k === 'e' || k === 'E'){ showEdit(); }
-  else if (k === 'Escape'){ hideSettings(); hideTricky(); if (!isDocked()) toggleSide(false); }
+  else if (k === 'Escape'){ hideSettings(); hideTricky(); closeScanner(); closeKeyQR(); if (!isDocked()) toggleSide(false); }
 });
 function lineStep(dir){
   if (!words.length) return 0;
@@ -1670,9 +1922,10 @@ window.tp = {
   fakeHearing(v){ fakeHearing = !!v; lastMoveAt = Date.now(); },
   endRun(){ finishRun(); },
   md(text){ return mdToScript(text); },
-  // mock interview without a microphone or a real ChatGPT
+  // mock interview without a microphone, a camera or a real AI
   mockGPT(fn){ fakeGPT = fn; },
   hear(text){ heardQuestion(text); },
+  scanTest(k){ $('#scanView').classList.remove('hidden'); scan = scan || { stream:{ getTracks:() => [] }, timer:0, found:null }; gotQR(k); },
   mi(){ return { on:mi.on, view:mi.view, mode:S.miMode, q:mi.q, err:mi.err, ptIdx, items:mockItems.length, cur }; },
   learn(){ return learn; }
 };
