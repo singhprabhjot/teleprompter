@@ -228,6 +228,22 @@ body.mi.mi-answer #miFoot{display:flex}
 #miCtx{width:100%;box-sizing:border-box;background:#0e0f11;border:1px solid #3a3f46;border-radius:8px;padding:8px 10px;color:var(--text);font-size:14px;line-height:1.45;resize:vertical}
 #miWaitV{color:var(--accent);font-weight:600}
 
+/* the Question / Answer / Auto switch: under the points when an answer is on screen;
+   otherwise floating in the bottom-left corner of the main area */
+#miDock{display:none;position:fixed;z-index:10;box-sizing:border-box;padding:12px 14px 14px;background:var(--panel);flex-direction:column;gap:8px;
+  left:calc(var(--sideW) + 12px);bottom:12px;width:300px;max-width:calc(100vw - 24px);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px #0009}
+body.mi #miDock{display:flex}
+body.mi.mi-answer.mi-split #miDock{left:var(--sideW);bottom:0;width:300px;border:0;border-top:1px solid var(--line);border-right:1px solid var(--line);
+  border-radius:0;box-shadow:none;background:#121417}
+body.mi.mi-answer.mi-split #points{padding-bottom:150px}
+body.mi.mi-answer.mi-only #miDock{bottom:84px}
+body.mi.mi-only #points{padding-bottom:200px}
+.mdcap{font-size:11px;font-weight:650;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;padding:0 2px}
+#miDock #miSeg{border-color:#3a3f46;border-radius:13px}
+#miDock #miSeg button{flex:1;height:52px;padding:0;font-size:15px}
+#miDock #miSeg button.on{font-weight:700}
+#miDock .mistatus{font-size:13px;padding:0 2px;white-space:normal}
+
 /* ---------- choosing the AI, and moving its key by QR code ---------- */
 .aiseg{width:100%}
 .aiseg button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:8px 6px;font-size:14px}
@@ -323,8 +339,6 @@ body.mi.mi-answer #miFoot{display:flex}
     <button id="sideBtn" title="Questions" aria-label="Show or hide the questions">☰</button>
     <button id="editBtn" title="Edit answers (E)">✎ Edit</button>
     <div class="seg" id="learnSeg" title="Learning mode marks the words you struggle with (L)"><button data-learn="0">Interview</button><button data-learn="1">Learning</button></div>
-    <div class="seg" id="miSeg" role="group" aria-label="What the microphone listens for"><button data-mi="question">Question</button><button data-mi="answer">Answer</button><button data-mi="auto">Auto</button></div>
-    <span id="miStatus" class="mistatus"></span>
     <div class="spacer"></div>
     <div class="seg" id="viewSeg" role="group" aria-label="Answer view"><button data-view="split">Points + full</button><button data-view="only">Points only</button></div>
     <span id="timer" class="timer">0:00</span>
@@ -378,6 +392,11 @@ body.mi.mi-answer #miFoot{display:flex}
   </div>
   <div id="tricky" class="settings tpanel hidden"></div>
   <footer id="heard" class="heard"></footer>
+  <div id="miDock" role="group" aria-label="Microphone">
+    <div class="mdcap">Microphone listens for</div>
+    <div class="seg" id="miSeg" role="group" aria-label="What the microphone listens for"><button data-mi="question">Question</button><button data-mi="answer">Answer</button><button data-mi="auto">Auto</button></div>
+    <span id="miStatus" class="mistatus"></span>
+  </div>
 </section>
 
 <div id="toast" class="toast hidden"></div>
@@ -1504,7 +1523,7 @@ function updateMiUI(){
   const now = mi.view === 'thinking' ? 'getting the answer'
     : mi.view === 'ask' ? (micFor() === 'question' ? (ask?.text ? 'hearing your question' : 'waiting for your question') : 'answer mode')
     : micFor() === 'reading' ? 'reading' : 'ready for your next question';
-  st.append(({ question:'Question', answer:'Answer', auto:'Auto' })[S.miMode] + ' · ');
+  st.append('Now: ');
   const b = document.createElement('b'); b.textContent = listening ? now : 'tap Listen'; st.appendChild(b);
   $('#miFootText').textContent = S.miMode === 'auto' ? 'When he reaches the end, it waits for your next question'
     : S.miMode === 'question' ? 'Ask the next question whenever you’re ready' : 'Answer mode: the microphone follows the reading';
