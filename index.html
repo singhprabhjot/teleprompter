@@ -359,6 +359,7 @@ body.mi.mi-only #points{padding-bottom:200px}
     <div class="row"><label>Answer length</label><div class="seg" id="lenSeg"><button data-len="short">30 s</button><button data-len="medium">1 min</button><button data-len="long">2 min</button></div></div>
     <div class="row"><label>Stream the answer</label><div class="seg" id="streamSeg"><button data-stream="on">On</button><button data-stream="off">Off</button></div></div>
     <div class="aihint" id="streamHint"></div>
+    <div class="aihint" id="streamLast"></div>
     <div class="row"><label for="miWait">Question ends after <span id="miWaitV">1.5 s</span> of silence</label><input id="miWait" type="range" min="1" max="4" step="0.5"></div>
     <label class="ml" for="miCtx">Context (sent with every question)</label>
     <textarea id="miCtx" rows="4"></textarea>
@@ -1308,7 +1309,8 @@ function addMock(item){
    and grows while he reads. The AI writes plain text in two blocks, ANSWER and NOTES; the one he needs
    first comes first (the full answer, or the notes in Notes only). */
 async function streamQuestion(q, ctrl){
-  let item = null, full = '', timer = 0;
+  let item = null, full = '', timer = 0, shownAt = 0;
+  const t0 = performance.now();
   const show = () => {
     timer = 0;
     if (ctrl !== gptCtrl) return;
@@ -1317,20 +1319,22 @@ async function streamQuestion(q, ctrl){
       if (!p.paras.length && !notes.some(n => n.items.length)) return;   // nothing to read yet
       item = { id:'m' + Date.now().toString(36), q, notes, paras:p.paras, at:Date.now(), streaming:true };
       addMock(item);
+      shownAt = performance.now() - t0;
       return;
     }
     item.paras = p.paras; item.notes = notes;
     liveRender(item);
   };
   try {
-    const text = await streamAI(q, ctrl.signal, t => { full = t; if (!timer) timer = setTimeout(show, 80); });
+    const text = await streamAI(q, ctrl.signal, t => { full = t; if (!timer) timer = setTimeout(show, item ? 80 : 0); });
     clearTimeout(timer); timer = 0;
     if (ctrl !== gptCtrl) throw Object.assign(new Error('Cancelled'), { name:'AbortError' });
     gptCtrl = null;
     const ans = streamedAnswer(text);
-    if (!item){ addMock({ id:'m' + Date.now().toString(36), q, notes:ans.notes, paras:ans.paras, at:Date.now() }); return; }
-    item.paras = ans.paras; item.notes = ans.notes; delete item.streaming;
-    saveMock(); liveRender(item);
+    if (!item) addMock({ id:'m' + Date.now().toString(36), q, notes:ans.notes, paras:ans.paras, at:Date.now() });
+    else { item.paras = ans.paras; item.notes = ans.notes; delete item.streaming; saveMock(); liveRender(item); }
+    const total = performance.now() - t0;
+    noteHow(shownAt || total, total);
   } catch (err){
     clearTimeout(timer); timer = 0;
     const mine = ctrl === gptCtrl, msg = (err && err.message) || 'Something went wrong.';
@@ -1430,8 +1434,32 @@ function streamPrompt(){
     (S.miCtx || '').trim() ? 'Context from the person running the session (follow it):\n' + S.miCtx.trim() : ''
   ].filter(Boolean).join('\n');
 }
+// how the last streamed answer arrived: { model, streamed, refused } — refused = the model ChatGPT wouldn't stream
+let lastStream = null;
+function noteHow(first, total){
+  const how = lastStream || {}, prev = S.lastStream || {};
+  const L = S.lastStream = { ai:S.ai, model:how.model || '', streamed:how.streamed !== false, refused:how.refused || '', first:Math.round(first), total:Math.round(total) };
+  saveSettings(); renderStreamInfo();
+  if (L.refused && (prev.model !== L.model || prev.streamed !== L.streamed || prev.refused !== L.refused))
+    toast(L.streamed ? `Streaming with ${L.model}: ${AI_NAME[L.ai]} streams ${L.refused} only for a verified OpenAI organization.`
+      : `This answer came in one piece: ${AI_NAME[L.ai]} streams ${L.refused} only for a verified OpenAI organization.`, 8000);
+}
+function renderStreamInfo(){
+  const el = $('#streamLast'), L = S.lastStream;
+  if (!el) return;
+  el.textContent = '';
+  if (!S.miStream || !L || !L.total) return;
+  const sec = ms => (ms / 1000).toFixed(1) + ' s', who = (AI_NAME[L.ai] || '') + (L.model ? ' · ' + L.model : '');
+  let t = L.streamed
+    ? `Last answer (${who}): the first words were on screen ${sec(L.first)} after the question went, and it finished after ${sec(L.total)}.`
+    : `Last answer (${who}) came in one piece after ${sec(L.total)}.`;
+  if (L.refused) t += ` ${AI_NAME[L.ai]} streams ${L.refused} only for a verified OpenAI organization (platform.openai.com → Settings → Organization → Verify). ` +
+    (L.streamed ? `Until then streamed answers come from ${L.model}; it tries ${L.refused} again every 12 hours, or when you tap Test.` : 'Until then answers come in one piece.');
+  el.textContent = t;
+}
 async function streamAI(q, signal, onText){
-  if (fakeStream) return fakeStream(q, onText, signal);
+  lastStream = null;
+  if (fakeStream){ lastStream = { model:'test', streamed:true }; return fakeStream(q, onText, signal); }
   const sys = streamPrompt();
   return S.ai === 'claude' ? streamClaude(sys, q, signal, onText) : streamOpenAICompatible(S.ai === 'grok' ? 'grok' : 'chatgpt', sys, q, signal, onText);
 }
@@ -1539,6 +1567,7 @@ async function streamClaude(sys, q, signal, onText){
     }
     const msg = await stream.finalMessage();
     if (msg.stop_reason === 'refusal') throw Object.assign(new Error('Claude didn’t answer that one. Try asking it a different way.'), { drop:true });
+    lastStream = { model:msg.model || CLAUDE_MODEL, streamed:true };
     return full;
   } catch (err){ throw err && err.drop ? err : claudeError(err); }
 }
@@ -1576,25 +1605,71 @@ async function askOpenAICompatible(ai, sys, q, signal){
   }
   throw new Error(AI_NAME[ai] + ' didn’t accept the request. Try again.');
 }
+// OpenAI streams some models (gpt-5, gpt-5-mini) only for an organization it has verified; any other key gets a 400
+// for stream:true. These quick ones stream without that, so a streamed answer still starts in about a second.
+const STREAM_BACKUP = { chatgpt:['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-5-nano'], grok:[] };
+const NO_STREAM_FOR = 12 * 3600e3;   // a model that wouldn't stream is skipped this long, then tried again
 async function streamOpenAICompatible(ai, sys, q, signal, onText){
-  const P = OAI[ai], model = await pickModel(ai, signal);
-  const body = { model, messages:[{ role:'system', content:sys }, { role:'user', content:q }], stream:true };
+  const picked = await pickModel(ai, signal);
+  S.noStream = S.noStream || {};
+  const fresh = m => !S.noStream[m] || Date.now() - S.noStream[m] > NO_STREAM_FOR;
+  let refused = fresh(picked) ? '' : picked;
+  const list = [picked, ...(STREAM_BACKUP[ai] || [])].filter((m, i, a) => a.indexOf(m) === i && fresh(m));
+  for (const model of list){
+    const r = await oaiRequest(ai, model, sys, q, signal, true);
+    if (r.ok){ lastStream = { model, streamed:true, refused }; return readSSE(r, onText); }
+    if (r.noStream || r.missing){
+      if (r.noStream && !refused) refused = model;
+      if (r.missing && model === picked) S.models[ai] = '';   // gone from this key: pick again next time
+      S.noStream[model] = Date.now(); saveSettings();
+      continue;
+    }
+    throw new Error(aiError(ai, r.status, r.msg));
+  }
+  // nothing streams on this key: the answer in one piece
+  const r = await oaiRequest(ai, picked, sys, q, signal, false);
+  if (!r.ok) throw new Error(aiError(ai, r.status, r.msg));
+  const j = await r.json().catch(() => ({})), t = j.choices?.[0]?.message?.content || '';
+  lastStream = { model:picked, streamed:false, refused };
+  onText(t);
+  return t;
+}
+// the thinking a reasoning model does before its first word: as little as it takes. none (gpt-5.1 on) → minimal (gpt-5) → low
+const EFFORTS = ['none', 'minimal', 'low'];
+function firstEffort(model){
+  if (!/^(gpt-5|o\d)/.test(model)) return '';                        // not a reasoning model
+  const k = S.effort && S.effort[model];
+  if (typeof k === 'string') return k;                               // what it took last time ('' = it takes none)
+  return /^o\d/.test(model) ? 'low' : /^gpt-5(-|$)/.test(model) ? 'minimal' : 'none';
+}
+// one request, dropping any setting the model doesn't take. → the Response when it worked, else { status, msg, noStream, missing }
+async function oaiRequest(ai, model, sys, q, signal, stream){
+  const P = OAI[ai];
+  const body = { model, messages:[{ role:'system', content:sys }, { role:'user', content:q }] };
+  if (stream) body.stream = true;
   body[P.tok] = 3000;
-  if (ai === 'chatgpt' && /^(gpt-5|o\d)/.test(model)) body.reasoning_effort = 'low';
-  for (let tries = 0; tries < 5; tries++){
+  const effort = ai === 'chatgpt' ? firstEffort(model) : '';
+  if (effort) body.reasoning_effort = effort;
+  for (let tries = 0; tries < 6; tries++){
     const r = await fetch(P.base + '/chat/completions', { method:'POST', signal,
       headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + keyOf(ai) }, body:JSON.stringify(body) });
-    if (!r.ok){
-      const j = await r.json().catch(() => ({})), m = errText(j);
-      // a setting this model or account doesn't take (some keys can't stream some models): drop it and ask again
-      const drop = ['stream', 'reasoning_effort', 'max_completion_tokens', 'max_tokens'].find(k => r.status === 400 && m.includes(k) && k in body);
-      if (drop){ delete body[drop]; continue; }
-      throw new Error(aiError(ai, r.status, m));
+    if (r.ok){
+      if (ai === 'chatgpt' && /^(gpt-5|o\d)/.test(model)){ S.effort = S.effort || {}; if (S.effort[model] !== (body.reasoning_effort || '')){ S.effort[model] = body.reasoning_effort || ''; saveSettings(); } }
+      return r;
     }
-    if (!body.stream){ const j = await r.json().catch(() => ({})), t = j.choices?.[0]?.message?.content || ''; onText(t); return t; }
-    return readSSE(r, onText);
+    const j = await r.json().catch(() => ({})), m = errText(j), param = (j && j.error && j.error.param) || '', code = (j && j.error && j.error.code) || '';
+    if (stream && (/verif/i.test(m) || param === 'stream')) return { status:r.status, msg:m, noStream:true };
+    if (r.status === 404 || code === 'model_not_found') return { status:r.status, msg:m, missing:true };
+    if (r.status === 400 && 'reasoning_effort' in body && (param === 'reasoning_effort' || /reasoning[._]effort/.test(m))){
+      const next = EFFORTS[EFFORTS.indexOf(body.reasoning_effort) + 1];
+      if (next) body.reasoning_effort = next; else delete body.reasoning_effort;
+      continue;
+    }
+    const drop = ['max_completion_tokens', 'max_tokens'].find(k => r.status === 400 && m.includes(k) && k in body);
+    if (drop){ delete body[drop]; continue; }
+    return { status:r.status, msg:m };
   }
-  throw new Error(AI_NAME[ai] + ' didn’t accept the request. Try again.');
+  return { status:400, msg:'' };
 }
 // server-sent events: "data: {…}" lines, each with the next few characters, then "data: [DONE]"
 async function readSSE(r, onText){
@@ -1819,6 +1894,7 @@ function renderAiUI(){
 function setKey(ai, k){
   S.keys = { ...(S.keys || {}), [ai]:k };
   S.models = { ...(S.models || {}), [ai]:'' };
+  S.noStream = {}; S.effort = {};   // another key may be allowed to stream what this one wasn't
   saveSettings(); $('#gptStatus').textContent = ''; renderAiUI();
 }
 $('#aiSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.ai = b.dataset.ai; saveSettings(); $('#gptStatus').textContent = ''; renderAiUI(); updateMiUI(); renderAsk(); });
@@ -1831,7 +1907,7 @@ async function testKey(){
     let what;
     // Claude: counting the tokens of a word checks the key and the model, and costs nothing
     if (ai === 'claude'){ const c = await claudeClient(); await c.messages.countTokens({ model:CLAUDE_MODEL, messages:[{ role:'user', content:'Hello' }] }); what = 'Claude Opus 5.5'; }
-    else { S.models = { ...(S.models || {}), [ai]:'' }; what = await pickModel(ai); }
+    else { S.models = { ...(S.models || {}), [ai]:'' }; S.noStream = {}; saveSettings(); what = await pickModel(ai); }
     st.textContent = `✓ Working (${what}) · it stays on this device`; st.className = 'gstat ok';
   } catch (err){
     const e = ai === 'claude' ? claudeError(err) : err;
@@ -2067,6 +2143,7 @@ function applySettings(){
   $('#streamHint').textContent = S.miStream
     ? 'On: the answer shows up while it is still being written, so he can start reading in about a second. The cheat notes fill in as they arrive.'
     : 'Off: the answer shows up once it is complete, usually 2 to 5 seconds after the question.';
+  renderStreamInfo();
   $('#miWait').value = S.miWait || 1.5; $('#miWaitV').textContent = (+S.miWait || 1.5) + ' s';
   updateRunUI(); updateLearnUI(); updateMiUI();
   if (words.length && S.mode === 'voice') requestAnimationFrame(() => scrollToPos(true));

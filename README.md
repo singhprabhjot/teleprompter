@@ -43,3 +43,8 @@ writing it, so he can start reading in about a second instead of waiting 2–5 s
 the cheat notes fill in after it (in **Notes only**, the notes come first). "Still writing…" at the bottom means more
 is on the way; Auto waits for it before going back to the next question. A key that isn't allowed to stream gets the
 answer the normal way.
+
+ChatGPT note: OpenAI streams gpt-5 and gpt-5-mini only for an organization it has verified
+(platform.openai.com → Settings → Organization → Verify). On any other key, streamed answers come from gpt-4.1-mini,
+which streams without it; the app tries gpt-5-mini again every 12 hours, or when you tap Test. Under the setting,
+Settings shows which model wrote the last answer and how soon its first words were on screen.
