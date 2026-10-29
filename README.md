@@ -37,3 +37,9 @@ next question). **Notes only** hides the full text so he speaks from the notes. 
 own API key in that browser. Claude runs on Claude Opus 5.5 through Anthropic's SDK. **Scan QR** fills a key from a QR
 code: on a computer, paste the key and tap **Show as QR code**, then scan it with the iPad. The context box is sent with
 every question.
+
+**Stream the answer** (⚙︎ Settings → Mock interview, off by default): the answer shows up while the AI is still
+writing it, so he can start reading in about a second instead of waiting 2–5 seconds. The full answer comes first and
+the cheat notes fill in after it (in **Notes only**, the notes come first). "Still writing…" at the bottom means more
+is on the way; Auto waits for it before going back to the next question. A key that isn't allowed to stream gets the
+answer the normal way.
