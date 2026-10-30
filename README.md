@@ -53,3 +53,9 @@ Settings shows which model wrote the last answer and how soon its first words we
 start with AQ., older ones with AIza, and both are recognised: pasting one switches to Gemini by itself). Flash is quick when it hardly thinks first, so the app asks for the least
 thinking each model accepts and remembers it. It streams on any key, verified or not. Free keys allow only a few
 questions a minute.
+
+**Model and Thinking first** (⚙︎ Settings → Mock interview), for trying things out. Model: **Automatic** picks a quick
+model and, for Gemini, answers with an older Flash when the newest is busy or refuses; pick one from the list (it comes
+from your key) to use exactly that model and see its own errors. Thinking first: **Least** (the lowest each model
+takes; the quickest first words), Low, Med or High. Under Stream the answer, Settings shows how soon the last
+answer's first words came and when it finished, streamed or not.

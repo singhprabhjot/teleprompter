@@ -147,6 +147,8 @@ html{touch-action:manipulation}
 .settings .row label{color:var(--muted)}
 .settings input[type=range]{width:150px;accent-color:var(--accent)}
 .settings select{background:#23262b;border:1px solid var(--line);border-radius:7px;padding:5px 8px}
+#aiModel{max-width:205px;min-width:0}
+#thinkSeg button{padding:6px 9px}
 .settings input[type=checkbox]{accent-color:var(--accent);width:17px;height:17px}
 .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{border:0;border-radius:0;padding:6px 10px;font-size:13px}
@@ -356,6 +358,9 @@ body.mi.mi-only #points{padding-bottom:200px}
     <div class="keyrow"><input id="gptKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"><button id="scanKey" class="scanbtn">Scan QR</button><button id="gptTest">Test</button></div>
     <div class="gline"><span id="gptStatus" class="gstat"></span><a href="#" id="showQR">Show as QR code</a></div>
     <div id="keyWhere" class="aihint"></div>
+    <div class="row"><label for="aiModel">Model</label><select id="aiModel"></select></div>
+    <div class="row"><label>Thinking first</label><div class="seg" id="thinkSeg"><button data-think="auto">Least</button><button data-think="low">Low</button><button data-think="medium">Med</button><button data-think="high">High</button></div></div>
+    <div class="aihint">Less thinking = sooner first words. Automatic picks a quick model and falls back to another if it is busy; a model you pick is used as it is. How fast the last answer came is shown under Stream the answer.</div>
     <div class="row"><label>Answer length</label><div class="seg" id="lenSeg"><button data-len="short">30 s</button><button data-len="medium">1 min</button><button data-len="long">2 min</button></div></div>
     <div class="row"><label>Stream the answer</label><div class="seg" id="streamSeg"><button data-stream="on">On</button><button data-stream="off">Off</button></div></div>
     <div class="aihint" id="streamHint"></div>
@@ -459,12 +464,12 @@ I measured where the time went, fixed the three slowest parts, and brought it un
 // The Google Doc the answers come from unless this browser was unlinked from it.
 const DEFAULT_DOC = 'https://docs.google.com/document/d/1JQ85zXCVrGll95KLjLDxMi7M3-8vQ7iOInH2y_k5b10/edit';
 const DEFAULTS = { mode:'voice', speed:40, fs:38, w:900, rl:24, lang:'en-US', showHeard:true, mirror:false, docUrl:DEFAULT_DOC, docUnlinked:false, stress:'on', learn:false,
-  miMode:'auto', miView:'split', miLen:'medium', miWait:1.5, miStream:false, ai:'chatgpt', keys:{}, models:{},
+  miMode:'auto', miView:'split', miLen:'medium', miWait:1.5, miStream:false, ai:'chatgpt', keys:{}, models:{}, pick:{}, think:'auto',
   miCtx:'I am interviewing my son for practice. Answer as him, in the first person, in simple words a student would say.' };
 let S = Object.assign({}, DEFAULTS, store.get('settings', {}));
 if (!S.docUrl && !S.docUnlinked) S.docUrl = DEFAULT_DOC;
 // one key per AI; an older ChatGPT-only key moves over
-S.keys = { ...(S.keys || {}) }; S.models = { ...(S.models || {}) };
+S.keys = { ...(S.keys || {}) }; S.models = { ...(S.models || {}) }; S.pick = { ...(S.pick || {}) };
 if (S.gptKey && !S.keys.chatgpt) S.keys.chatgpt = S.gptKey;
 if (S.gptModel && !S.models.chatgpt) S.models.chatgpt = S.gptModel;
 delete S.gptKey; delete S.gptModel;
@@ -1280,10 +1285,13 @@ async function submitQuestion(text){
   const ctrl = gptCtrl = new AbortController();
   if (S.miStream && (fakeStream || !fakeGPT)) return streamQuestion(q, ctrl);
   try {
+    const t0 = performance.now(); lastStream = null;
     const ans = await askGPT(q, ctrl.signal);
     if (ctrl !== gptCtrl) return;                         // cancelled, or another question took over
     gptCtrl = null;
     addMock({ id:'m' + Date.now().toString(36), q, notes:ans.notes, paras:ans.paras, at:Date.now() });
+    const tt = performance.now() - t0;
+    lastStream = { ...(lastStream || {}), streamed:false }; noteHow(tt, tt);
   } catch (err){
     if (ctrl !== gptCtrl) return;
     gptCtrl = null;
@@ -1448,7 +1456,7 @@ function renderStreamInfo(){
   const el = $('#streamLast'), L = S.lastStream;
   if (!el) return;
   el.textContent = '';
-  if (!S.miStream || !L || !L.total) return;
+  if (!L || !L.total) return;
   const sec = ms => (ms / 1000).toFixed(1) + ' s', who = (AI_NAME[L.ai] || '') + (L.model ? ' · ' + L.model : '');
   let t = L.streamed
     ? `Last answer (${who}): the first words were on screen ${sec(L.first)} after the question went, and it finished after ${sec(L.total)}.`
@@ -1543,13 +1551,15 @@ async function claudeClient(){
 async function askClaude(sys, q, signal){
   const client = await claudeClient();
   try {
-    const res = await client.beta.messages.create({
-      model:CLAUDE_MODEL, max_tokens:16000,
+    const model = chosen('claude') || CLAUDE_MODEL;
+    const res = await claudeTry(effort => client.beta.messages.create({
+      model, max_tokens:16000,
       betas:['server-side-fallback-2026-07-01'], fallbacks:'default',   // if Claude declines, the API reroutes the request itself
       system:sys,
-      output_config:{ effort:'low', format:{ type:'json_schema', schema:ANSWER_SCHEMA } },   // low effort = a quick answer
+      output_config:{ ...(effort ? { effort } : {}), format:{ type:'json_schema', schema:ANSWER_SCHEMA } },   // low effort = a quick answer
       messages:[{ role:'user', content:q }]
-    }, { signal });
+    }, { signal }));
+    lastStream = { model:res.model || model, streamed:false };
     if (res.stop_reason === 'refusal') throw new Error('Claude didn’t answer that one. Try asking it a different way.');
     return normAnswer(res.content.filter(b => b.type === 'text').map(b => b.text).join(''));
   } catch (err){ throw claudeError(err); }
@@ -1557,22 +1567,35 @@ async function askClaude(sys, q, signal){
 async function streamClaude(sys, q, signal, onText){
   const client = await claudeClient();
   try {
-    const stream = client.beta.messages.stream({
-      model:CLAUDE_MODEL, max_tokens:16000,
-      betas:['server-side-fallback-2026-07-01'], fallbacks:'default',   // a decline is re-served on the same stream
-      system:sys,
-      output_config:{ effort:'low' },
-      messages:[{ role:'user', content:q }]
-    }, { signal });
+    const model = chosen('claude') || CLAUDE_MODEL;
     let full = '';
-    for await (const ev of stream){
-      if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta'){ full += ev.delta.text; onText(full); }
-    }
-    const msg = await stream.finalMessage();
+    const msg = await claudeTry(async effort => {
+      full = '';
+      const stream = client.beta.messages.stream({
+        model, max_tokens:16000,
+        betas:['server-side-fallback-2026-07-01'], fallbacks:'default',   // a decline is re-served on the same stream
+        system:sys,
+        ...(effort ? { output_config:{ effort } } : {}),
+        messages:[{ role:'user', content:q }]
+      }, { signal });
+      for await (const ev of stream){
+        if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta'){ full += ev.delta.text; onText(full); }
+      }
+      return stream.finalMessage();
+    });
     if (msg.stop_reason === 'refusal') throw Object.assign(new Error('Claude didn’t answer that one. Try asking it a different way.'), { drop:true });
-    lastStream = { model:msg.model || CLAUDE_MODEL, streamed:true };
+    lastStream = { model:msg.model || model, streamed:true };
     return full;
   } catch (err){ throw err && err.drop ? err : claudeError(err); }
+}
+// effort from Settings (Least = low); a model that doesn't take effort is asked again without it
+async function claudeTry(call){
+  const effort = thinkSet() || 'low';
+  try { return await call(effort); }
+  catch (err){
+    if (anthropicLib && err instanceof anthropicLib.BadRequestError && /effort/i.test(err.message || '')) return call('');
+    throw err;
+  }
 }
 function claudeError(err){
   const A = anthropicLib;
@@ -1591,10 +1614,11 @@ const OAI = {
 };
 const errText = j => j?.error?.message || (typeof j?.error === 'string' ? j.error : '') || '';
 async function askOpenAICompatible(ai, sys, q, signal){
-  const P = OAI[ai], model = await pickModel(ai, signal);
+  const P = OAI[ai], model = chosen(ai) || await pickModel(ai, signal);
+  lastStream = { model, streamed:false };
   const body = { model, messages:[{ role:'system', content:sys }, { role:'user', content:q }], response_format:{ type:'json_object' } };
   body[P.tok] = 3000;
-  if (ai === 'chatgpt' && /^(gpt-5|o\d)/.test(model)) body.reasoning_effort = 'low';
+  if (ai === 'chatgpt' && /^(gpt-5|o\d)/.test(model)) body.reasoning_effort = thinkSet() || 'low';
   for (let tries = 0; tries < 4; tries++){
     const r = await fetch(P.base + '/chat/completions', { method:'POST', signal,
       headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + keyOf(ai) }, body:JSON.stringify(body) });
@@ -1613,11 +1637,12 @@ async function askOpenAICompatible(ai, sys, q, signal){
 const STREAM_BACKUP = { chatgpt:['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-5-nano'], grok:[] };
 const NO_STREAM_FOR = 12 * 3600e3;   // a model that wouldn't stream is skipped this long, then tried again
 async function streamOpenAICompatible(ai, sys, q, signal, onText){
-  const picked = await pickModel(ai, signal);
+  const manual = chosen(ai), picked = manual || await pickModel(ai, signal);
   S.noStream = S.noStream || {};
   const fresh = m => !S.noStream[m] || Date.now() - S.noStream[m] > NO_STREAM_FOR;
-  let refused = fresh(picked) ? '' : picked;
-  const list = [picked, ...(STREAM_BACKUP[ai] || [])].filter((m, i, a) => a.indexOf(m) === i && fresh(m));
+  let refused = manual || fresh(picked) ? '' : picked;
+  const list = manual ? [manual]   // a model you picked: that one, streamed if it can be
+    : [picked, ...(STREAM_BACKUP[ai] || [])].filter((m, i, a) => a.indexOf(m) === i && fresh(m));
   for (const model of list){
     const r = await oaiRequest(ai, model, sys, q, signal, true);
     if (r.ok){ lastStream = { model, streamed:true, refused }; return readSSE(r, onText); }
@@ -1651,20 +1676,21 @@ async function oaiRequest(ai, model, sys, q, signal, stream){
   const body = { model, messages:[{ role:'system', content:sys }, { role:'user', content:q }] };
   if (stream) body.stream = true;
   body[P.tok] = 3000;
-  const effort = ai === 'chatgpt' ? firstEffort(model) : '';
+  const reasoning = ai === 'chatgpt' && /^(gpt-5|o\d)/.test(model);
+  const effort = !reasoning ? '' : thinkSet() || firstEffort(model);
   if (effort) body.reasoning_effort = effort;
   for (let tries = 0; tries < 6; tries++){
     const r = await fetch(P.base + '/chat/completions', { method:'POST', signal,
       headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + keyOf(ai) }, body:JSON.stringify(body) });
     if (r.ok){
-      if (ai === 'chatgpt' && /^(gpt-5|o\d)/.test(model)){ S.effort = S.effort || {}; if (S.effort[model] !== (body.reasoning_effort || '')){ S.effort[model] = body.reasoning_effort || ''; saveSettings(); } }
+      if (reasoning && !thinkSet()){ S.effort = S.effort || {}; if (S.effort[model] !== (body.reasoning_effort || '')){ S.effort[model] = body.reasoning_effort || ''; saveSettings(); } }
       return r;
     }
     const j = await r.json().catch(() => ({})), m = errText(j), param = (j && j.error && j.error.param) || '', code = (j && j.error && j.error.code) || '';
     if (stream && (/verif/i.test(m) || param === 'stream')) return { status:r.status, msg:m, noStream:true };
     if (r.status === 404 || code === 'model_not_found') return { status:r.status, msg:m, missing:true };
     if (r.status === 400 && 'reasoning_effort' in body && (param === 'reasoning_effort' || /reasoning[._]effort/.test(m))){
-      const next = EFFORTS[EFFORTS.indexOf(body.reasoning_effort) + 1];
+      const next = thinkSet() ? '' : EFFORTS[EFFORTS.indexOf(body.reasoning_effort) + 1];   // a level you set that it won't take: its own
       if (next) body.reasoning_effort = next; else delete body.reasoning_effort;
       continue;
     }
@@ -1739,16 +1765,76 @@ async function listModels(ai, signal){
   return (j.data || []).map(m => m.id);
 }
 
+/* Settings → Model: Automatic, or one model from this key's list. Settings → Thinking first: Least (the lowest
+   each model takes) or a set level. Both are for trying things out; Automatic + Least is the quick default. */
+const modelLists = {};
+const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
+const chosen = ai => (S.pick && S.pick[ai]) || '';
+const thinkSet = () => S.think && S.think !== 'auto' ? S.think : '';
+function usableModels(ai, ids){
+  if (ai === 'gemini') return ids.filter(x => /^gemini-/.test(x) && !/embed|tts|image|audio|live|native|computer|robotics|banana|aqa/.test(x));
+  if (ai === 'grok') return ids.filter(x => /^grok-/.test(x) && !/image|vision|imagine|embed|audio|voice/.test(x));
+  return ids.filter(x => /^(gpt-|o\d|chatgpt-)/.test(x) && !/audio|realtime|image|tts|transcribe|search|embed|instruct|moderation|codex|computer|dall/.test(x));
+}
+async function fillModels(force){
+  const ai = S.ai || 'chatgpt', sel = $('#aiModel');
+  const draw = list => {
+    if ((S.ai || 'chatgpt') !== ai) return;
+    const auto = ai === 'claude' ? CLAUDE_MODEL : (S.models && S.models[ai]) || '';
+    const pick = chosen(ai), all = list.slice();
+    if (pick && !all.includes(pick)) all.unshift(pick);
+    sel.innerHTML = '';
+    sel.add(new Option(auto ? `Automatic (${auto})` : 'Automatic', ''));
+    for (const m of all) sel.add(new Option(m, m));
+    sel.value = pick;
+  };
+  if (ai === 'claude'){ draw(CLAUDE_MODELS); return; }
+  draw(modelLists[ai] || []);
+  if (!keyOf(ai) || (modelLists[ai] && !force)) return;
+  try { modelLists[ai] = usableModels(ai, await listModels(ai)).sort().reverse(); draw(modelLists[ai]); } catch {}
+}
+
 /* Gemini (Google AI Studio key), straight from the page: the key goes in a header, only to Google. Flash is
    quick when it hardly thinks first, so it asks for the least thinking the model takes. */
 const GEM = 'https://generativelanguage.googleapis.com/v1beta';
-function pickGemini(ids){
+function flashList(ids){
   const ver = x => parseFloat((x.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
   const stable = x => !/preview|latest|exp|-\d{2}-\d{2,4}$/.test(x);
   const flash = ids.filter(x => /^gemini-\d+(\.\d+)?-flash(\b|-)/.test(x)
     && !/lite|image|tts|audio|live|thinking|embed|exp|8b|native|computer|robotics|vision|search|banana/.test(x));
-  flash.sort((a, b) => ver(b) - ver(a) || stable(b) - stable(a) || a.length - b.length);   // newest, then its stable name
-  return flash[0] || (ids.includes('gemini-flash-latest') ? 'gemini-flash-latest' : 'gemini-2.5-flash');
+  return flash.sort((a, b) => ver(b) - ver(a) || stable(b) - stable(a) || a.length - b.length);   // newest, then its stable name
+}
+function pickGemini(ids){
+  gemFlash = flashList(ids);
+  return gemFlash[0] || (ids.includes('gemini-flash-latest') ? 'gemini-flash-latest' : 'gemini-2.5-flash');
+}
+let gemFlash = null;   // the Flash models on this key, newest first (this visit)
+// the model to try first, then older Flash models: a new key may not be allowed the newest one yet
+async function geminiModels(signal){
+  if (chosen('gemini')) return [chosen('gemini')];   // a model you picked: only that one
+  const first = await pickModel('gemini', signal);
+  if (!gemFlash){ try { gemFlash = flashList(await listModels('gemini', signal)); } catch { gemFlash = []; } }
+  return [first, ...gemFlash.filter(m => m !== first)].slice(0, 4);
+}
+async function geminiCall(sys, q, signal, stream){
+  const models = await geminiModels(signal);
+  let firstErr = null;
+  for (const model of models){
+    try {
+      const r = await geminiRequest(model, sys, q, signal, stream, !stream);
+      lastStream = { model, streamed:stream };
+      if (firstErr){   // an older Flash answered: use it from now on, and say why once
+        S.models.gemini = model; saveSettings();
+        toast(`Gemini: answering with ${model}. ${models[0]} didn’t answer on this key (${(firstErr.raw || firstErr.message).slice(0, 120)}).`, 9000);
+      }
+      return { r, model };
+    } catch (e){
+      if ((e && e.name === 'AbortError') || (e && e.keyProblem)) throw e;
+      firstErr = firstErr || e;
+    }
+  }
+  if (firstErr && firstErr.status && firstErr.status !== 429) throw new Error(`Gemini said: ${firstErr.raw || firstErr.message} (error ${firstErr.status})`);
+  throw firstErr || new Error('Gemini didn’t answer. Try again.');
 }
 // thinking before the first word: none on 2.x Flash (budget 0); on 3.x the lowest level it takes (minimal → low → its own)
 function geminiThink(model){
@@ -1762,25 +1848,31 @@ function nextThink(v, m){
   return low && v === v.toUpperCase() ? low.toUpperCase() : low;
 }
 async function geminiRequest(model, sys, q, signal, stream, json){
-  let think = geminiThink(model);
+  const set = thinkSet();
+  let think = set ? (/^gemini-[12]\./.test(model) ? 'budget:' + { low:1024, medium:4096, high:-1 }[set] : set) : geminiThink(model);
   for (let tries = 0; tries < 5; tries++){
     const gc = { maxOutputTokens:4000 };
     if (json) gc.responseMimeType = 'application/json';
-    if (think === 'budget0') gc.thinkingConfig = { thinkingBudget:0 };
+    if (/^budget/.test(think)) gc.thinkingConfig = { thinkingBudget:+think.replace(/\D*(-?\d+)$/, '$1') };
     else if (think) gc.thinkingConfig = { thinkingLevel:think };
     const body = { systemInstruction:{ parts:[{ text:sys }] }, contents:[{ role:'user', parts:[{ text:q }] }], generationConfig:gc };
     const r = await fetch(`${GEM}/models/${encodeURIComponent(model)}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`, {
       method:'POST', signal, headers:{ 'Content-Type':'application/json', 'x-goog-api-key':keyOf('gemini') }, body:JSON.stringify(body) });
     if (r.ok){
       S.effort = S.effort || {};
-      if (S.effort[model] !== think){ S.effort[model] = think; saveSettings(); }
+      if (!set && S.effort[model] !== think){ S.effort[model] = think; saveSettings(); }
       return r;
     }
     const j = await r.json().catch(() => ({})), m = errText(j);
-    if (r.status === 400 && think && /think/i.test(m)){ think = nextThink(think, m); continue; }
-    throw new Error(aiError('gemini', r.status, m));
+    const keyProblem = r.status === 401 || r.status === 403 || (r.status === 400 && /api key/i.test(m));
+    if (r.status === 400 && think && !keyProblem){
+      think = set ? '' : nextThink(think, m);   // it won't take this level: the next one (or its own)
+      if (!set){ S.effort = S.effort || {}; S.effort[model] = think; saveSettings(); }   // remembered even if the next try is busy
+      continue;
+    }
+    throw Object.assign(new Error(aiError('gemini', r.status, m)), { status:r.status, raw:m, keyProblem });
   }
-  throw new Error('Gemini didn’t accept the request. Try again.');
+  throw Object.assign(new Error('Gemini didn’t accept the request.'), { status:400, raw:'it refused every thinking setting' });
 }
 // the text in one Gemini reply (or one streamed piece of it); its thoughts, if any, are left out
 function geminiText(j){
@@ -1792,13 +1884,11 @@ function geminiText(j){
   return t;
 }
 async function askGemini(sys, q, signal){
-  const model = await pickModel('gemini', signal);
-  const r = await geminiRequest(model, sys, q, signal, false, true);
+  const { r } = await geminiCall(sys, q, signal, false);
   return normAnswer(geminiText(await r.json().catch(() => ({}))));
 }
 async function streamGemini(sys, q, signal, onText){
-  const model = await pickModel('gemini', signal);
-  const r = await geminiRequest(model, sys, q, signal, true, false);
+  const { r, model } = await geminiCall(sys, q, signal, true);
   lastStream = { model, streamed:true };
   return readSSE(r, onText, geminiText);
 }
@@ -1969,11 +2059,12 @@ function renderAiUI(){
   if (document.activeElement !== inp) inp.value = keyOf(ai);
   $('#keyWhere').textContent = AI_WHERE[ai];
   $('#showQR').classList.toggle('hidden', !keyOf(ai));
+  fillModels();
 }
 function setKey(ai, k){
   S.keys = { ...(S.keys || {}), [ai]:k };
   S.models = { ...(S.models || {}), [ai]:'' };
-  S.noStream = {}; S.effort = {};   // another key may be allowed to stream what this one wasn't
+  S.noStream = {}; S.effort = {}; gemFlash = null; modelLists[ai] = null;   // another key may be allowed what this one wasn't
   saveSettings(); $('#gptStatus').textContent = ''; renderAiUI();
 }
 $('#aiSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.ai = b.dataset.ai; saveSettings(); $('#gptStatus').textContent = ''; renderAiUI(); updateMiUI(); renderAsk(); });
@@ -1992,6 +2083,7 @@ async function testKey(){
     if (ai === 'claude'){ const c = await claudeClient(); await c.messages.countTokens({ model:CLAUDE_MODEL, messages:[{ role:'user', content:'Hello' }] }); what = 'Claude Opus 5.5'; }
     else { S.models = { ...(S.models || {}), [ai]:'' }; S.noStream = {}; saveSettings(); what = await pickModel(ai); }
     st.textContent = `✓ Working (${what}) · it stays on this device`; st.className = 'gstat ok';
+    fillModels(true);
   } catch (err){
     const e = ai === 'claude' ? claudeError(err) : err;
     st.textContent = (e && e.message) || 'That didn’t work.'; st.className = 'gstat err';
@@ -2083,6 +2175,8 @@ $('#scanUse').onclick = () => {
 };
 
 $('#lenSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.miLen = b.dataset.len; saveSettings(); applySettings(); });
+$('#aiModel').addEventListener('change', e => { S.pick = { ...(S.pick || {}), [S.ai || 'chatgpt']:e.target.value }; saveSettings(); });
+$('#thinkSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.think = b.dataset.think; saveSettings(); applySettings(); });
 $('#streamSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.miStream = b.dataset.stream === 'on'; saveSettings(); applySettings(); });
 $('#miWait').addEventListener('input', e => { S.miWait = +e.target.value; saveSettings(); applySettings(); });
 $('#miCtx').addEventListener('input', e => { S.miCtx = e.target.value; saveSettings(); });
@@ -2223,6 +2317,7 @@ function applySettings(){
   if (document.activeElement !== $('#miCtx')) $('#miCtx').value = S.miCtx || '';
   [...$('#lenSeg').children].forEach(b => b.classList.toggle('on', b.dataset.len === (S.miLen || 'medium')));
   [...$('#streamSeg').children].forEach(b => b.classList.toggle('on', (b.dataset.stream === 'on') === !!S.miStream));
+  [...$('#thinkSeg').children].forEach(b => b.classList.toggle('on', b.dataset.think === (S.think || 'auto')));
   $('#streamHint').textContent = S.miStream
     ? 'On: the answer shows up while it is still being written, so he can start reading in about a second. The cheat notes fill in as they arrive.'
     : 'Off: the answer shows up once it is complete, usually 2 to 5 seconds after the question.';
