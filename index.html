@@ -247,7 +247,7 @@ body.mi.mi-only #points{padding-bottom:200px}
 
 /* ---------- choosing the AI, and moving its key by QR code ---------- */
 .aiseg{width:100%}
-.aiseg button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:8px 6px;font-size:14px}
+.aiseg button{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px 3px;font-size:13.5px}
 .aiseg i{width:7px;height:7px;border-radius:50%;background:transparent}
 .aiseg i.has{background:#86efac}
 .aiseg button.on i.has{background:#1a1400}
@@ -350,7 +350,7 @@ body.mi.mi-only #points{padding-bottom:200px}
   <div id="settings" class="settings hidden">
     <div class="mh">Mock interview</div>
     <span class="ml">Answers come from</span>
-    <div class="seg aiseg" id="aiSeg" role="group" aria-label="Answers come from"><button data-ai="chatgpt">ChatGPT<i></i></button><button data-ai="claude">Claude<i></i></button><button data-ai="grok">Grok<i></i></button></div>
+    <div class="seg aiseg" id="aiSeg" role="group" aria-label="Answers come from"><button data-ai="chatgpt">ChatGPT<i></i></button><button data-ai="claude">Claude<i></i></button><button data-ai="grok">Grok<i></i></button><button data-ai="gemini">Gemini<i></i></button></div>
     <div class="aihint">Each one keeps its own key, so you can switch any time. A dot means its key is added.</div>
     <label class="ml" for="gptKey" id="keyLabel">ChatGPT key</label>
     <div class="keyrow"><input id="gptKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"><button id="scanKey" class="scanbtn">Scan QR</button><button id="gptTest">Test</button></div>
@@ -1461,19 +1461,21 @@ async function streamAI(q, signal, onText){
   lastStream = null;
   if (fakeStream){ lastStream = { model:'test', streamed:true }; return fakeStream(q, onText, signal); }
   const sys = streamPrompt();
-  return S.ai === 'claude' ? streamClaude(sys, q, signal, onText) : streamOpenAICompatible(S.ai === 'grok' ? 'grok' : 'chatgpt', sys, q, signal, onText);
+  return S.ai === 'claude' ? streamClaude(sys, q, signal, onText) : S.ai === 'gemini' ? streamGemini(sys, q, signal, onText)
+    : streamOpenAICompatible(S.ai === 'grok' ? 'grok' : 'chatgpt', sys, q, signal, onText);
 }
 
 /* The AI that writes the answer: ChatGPT, Claude or Grok. Each keeps its own key on this device. */
-const AI_NAME = { chatgpt:'ChatGPT', claude:'Claude', grok:'Grok' };
-const AI_HOLDER = { chatgpt:'sk-…', claude:'sk-ant-…', grok:'xai-…' };
+const AI_NAME = { chatgpt:'ChatGPT', claude:'Claude', grok:'Grok', gemini:'Gemini' };
+const AI_HOLDER = { chatgpt:'sk-…', claude:'sk-ant-…', grok:'xai-…', gemini:'AIza…' };
 const AI_WHERE = {
   chatgpt:'Get a key at platform.openai.com → API keys. The account needs a little credit.',
   claude:'Get a key at platform.claude.com → API keys. The account needs a little credit.',
-  grok:'Get a key at console.x.ai → API keys. The account needs a little credit.'
+  grok:'Get a key at console.x.ai → API keys. The account needs a little credit.',
+  gemini:'Get a key at aistudio.google.com → Get API key. It answers with Gemini Flash, Google’s quick model.'
 };
 const keyOf = ai => (S.keys && S.keys[ai]) || '';
-const aiOfKey = k => /^sk-ant-/.test(k) ? 'claude' : /^xai-/.test(k) ? 'grok' : /^sk-/.test(k) ? 'chatgpt' : null;   // from how the key starts
+const aiOfKey = k => /^sk-ant-/.test(k) ? 'claude' : /^xai-/.test(k) ? 'grok' : /^AIza/.test(k) ? 'gemini' : /^sk-/.test(k) ? 'chatgpt' : null;   // from how the key starts
 const ANSWER_SCHEMA = { type:'object', additionalProperties:false, required:['notes', 'paragraphs'], properties:{
   notes:{ type:'array', items:{ type:'object', additionalProperties:false, required:['label', 'items', 'para'],
     properties:{ label:{ type:'string' }, items:{ type:'array', items:{ type:'string' } }, para:{ type:'integer' } } } },
@@ -1493,7 +1495,8 @@ function answerPrompt(){
 async function askGPT(q, signal){
   if (fakeGPT) return normAnswer(await fakeGPT(q));
   const sys = answerPrompt();
-  return S.ai === 'claude' ? askClaude(sys, q, signal) : askOpenAICompatible(S.ai === 'grok' ? 'grok' : 'chatgpt', sys, q, signal);
+  return S.ai === 'claude' ? askClaude(sys, q, signal) : S.ai === 'gemini' ? askGemini(sys, q, signal)
+    : askOpenAICompatible(S.ai === 'grok' ? 'grok' : 'chatgpt', sys, q, signal);
 }
 
 const GENERIC_CUE = new Set(`simple definition define defining what does why how close closing conclusion conclude summary summarize summarise
@@ -1672,7 +1675,8 @@ async function oaiRequest(ai, model, sys, q, signal, stream){
   return { status:400, msg:'' };
 }
 // server-sent events: "data: {…}" lines, each with the next few characters, then "data: [DONE]"
-async function readSSE(r, onText){
+const oaiDelta = j => j.choices?.[0]?.delta?.content || '';
+async function readSSE(r, onText, pick = oaiDelta){
   const reader = r.body.getReader(), dec = new TextDecoder();
   let buf = '', full = '';
   for (;;){
@@ -1686,7 +1690,7 @@ async function readSSE(r, onText){
       if (d === '[DONE]') return full;
       let j; try { j = JSON.parse(d); } catch { continue; }
       if (j.error) throw new Error(errText(j) || 'The answer stopped.');
-      const t = j.choices?.[0]?.delta?.content;
+      const t = pick(j);
       if (t){ full += t; onText(full); }
     }
     if (done) return full;
@@ -1695,7 +1699,10 @@ async function readSSE(r, onText){
 function aiError(ai, status, m){
   const n = AI_NAME[ai];
   if (status === 401 || ((status === 400 || status === 403) && /api key|auth/i.test(m))) return `The ${n} key was refused. Check it in ⚙︎ Settings.`;
+  if (status === 429 && ai === 'gemini') return 'Gemini says this key has hit its limit for now (free keys allow only a few questions a minute). Wait a minute and try again.';
   if (status === 429) return /quota|billing|credit/i.test(m) ? `The ${n} account has run out of credit.` : `${n} is busy right now. Try again in a moment.`;
+  if (status === 403 && ai === 'gemini') return 'Google refused this key for the Gemini API. Make one at aistudio.google.com → Get API key.';
+  if (status >= 500) return `${n} is busy right now. Try again in a moment.`;
   if (status === 404 || /model/i.test(m)){ S.models = S.models || {}; S.models[ai] = ''; saveSettings(); return `That ${n} model isn’t available on this key. Try again.`; }
   return m || `${n} error ${status}. Try again.`;
 }
@@ -1705,7 +1712,8 @@ async function pickModel(ai, signal){
   if (S.models[ai]) return S.models[ai];
   const ids = await listModels(ai, signal);
   let id;
-  if (ai === 'grok'){
+  if (ai === 'gemini') id = pickGemini(ids);
+  else if (ai === 'grok'){
     const ver = x => parseFloat((x.match(/^grok-(\d+(?:\.\d+)?)/) || [])[1] || 0);
     const text = ids.filter(x => /^grok-/.test(x) && !/image|vision|imagine|embed|code|audio|voice/.test(x));
     text.sort((a, b) => ver(b) - ver(a) || (/fast/.test(b) - /fast/.test(a)) || (/non-reasoning/.test(b) - /non-reasoning/.test(a)));
@@ -1718,10 +1726,81 @@ async function pickModel(ai, signal){
   return id;
 }
 async function listModels(ai, signal){
+  if (ai === 'gemini'){
+    const r = await fetch(GEM + '/models?pageSize=1000', { headers:{ 'x-goog-api-key':keyOf('gemini') }, signal });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(aiError('gemini', r.status, errText(j)));
+    return (j.models || []).filter(m => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
+      .map(m => String(m.name || '').replace(/^models\//, ''));
+  }
   const r = await fetch(OAI[ai].base + '/models', { headers:{ Authorization:'Bearer ' + keyOf(ai) }, signal });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(aiError(ai, r.status, errText(j)));
   return (j.data || []).map(m => m.id);
+}
+
+/* Gemini (Google AI Studio key), straight from the page: the key goes in a header, only to Google. Flash is
+   quick when it hardly thinks first, so it asks for the least thinking the model takes. */
+const GEM = 'https://generativelanguage.googleapis.com/v1beta';
+function pickGemini(ids){
+  const ver = x => parseFloat((x.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
+  const stable = x => !/preview|latest|exp|-\d{2}-\d{2,4}$/.test(x);
+  const flash = ids.filter(x => /^gemini-\d+(\.\d+)?-flash(\b|-)/.test(x)
+    && !/lite|image|tts|audio|live|thinking|embed|exp|8b|native|computer|robotics|vision|search|banana/.test(x));
+  flash.sort((a, b) => ver(b) - ver(a) || stable(b) - stable(a) || a.length - b.length);   // newest, then its stable name
+  return flash[0] || (ids.includes('gemini-flash-latest') ? 'gemini-flash-latest' : 'gemini-2.5-flash');
+}
+// thinking before the first word: none on 2.x Flash (budget 0); on 3.x the lowest level it takes (minimal → low → its own)
+function geminiThink(model){
+  const k = S.effort && S.effort[model];
+  if (typeof k === 'string') return k;                  // what it took last time ('' = no setting)
+  return /^gemini-[12]\./.test(model) ? 'budget0' : 'minimal';
+}
+function nextThink(v, m){
+  if (v !== 'budget0' && v && v !== v.toUpperCase() && /invalid value/i.test(m)) return v.toUpperCase();   // in case it wants LOW, not low
+  const low = v.toLowerCase() === 'minimal' ? 'low' : '';
+  return low && v === v.toUpperCase() ? low.toUpperCase() : low;
+}
+async function geminiRequest(model, sys, q, signal, stream, json){
+  let think = geminiThink(model);
+  for (let tries = 0; tries < 5; tries++){
+    const gc = { maxOutputTokens:4000 };
+    if (json) gc.responseMimeType = 'application/json';
+    if (think === 'budget0') gc.thinkingConfig = { thinkingBudget:0 };
+    else if (think) gc.thinkingConfig = { thinkingLevel:think };
+    const body = { systemInstruction:{ parts:[{ text:sys }] }, contents:[{ role:'user', parts:[{ text:q }] }], generationConfig:gc };
+    const r = await fetch(`${GEM}/models/${encodeURIComponent(model)}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`, {
+      method:'POST', signal, headers:{ 'Content-Type':'application/json', 'x-goog-api-key':keyOf('gemini') }, body:JSON.stringify(body) });
+    if (r.ok){
+      S.effort = S.effort || {};
+      if (S.effort[model] !== think){ S.effort[model] = think; saveSettings(); }
+      return r;
+    }
+    const j = await r.json().catch(() => ({})), m = errText(j);
+    if (r.status === 400 && think && /think/i.test(m)){ think = nextThink(think, m); continue; }
+    throw new Error(aiError('gemini', r.status, m));
+  }
+  throw new Error('Gemini didn’t accept the request. Try again.');
+}
+// the text in one Gemini reply (or one streamed piece of it); its thoughts, if any, are left out
+function geminiText(j){
+  const blocked = () => Object.assign(new Error('Gemini didn’t answer that one. Try asking it a different way.'), { drop:true });
+  if (j.promptFeedback && j.promptFeedback.blockReason) throw blocked();
+  const c = j.candidates && j.candidates[0];
+  const t = ((c && c.content && c.content.parts) || []).filter(x => !x.thought).map(x => x.text || '').join('');
+  if (!t && c && /SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION/.test(c.finishReason || '')) throw blocked();
+  return t;
+}
+async function askGemini(sys, q, signal){
+  const model = await pickModel('gemini', signal);
+  const r = await geminiRequest(model, sys, q, signal, false, true);
+  return normAnswer(geminiText(await r.json().catch(() => ({}))));
+}
+async function streamGemini(sys, q, signal, onText){
+  const model = await pickModel('gemini', signal);
+  const r = await geminiRequest(model, sys, q, signal, true, false);
+  lastStream = { model, streamed:true };
+  return readSSE(r, onText, geminiText);
 }
 
 /* the cheat notes: labelled sections of short bullets. Beside the full answer, the sections of the paragraph being read
@@ -1977,7 +2056,7 @@ function tickScan(){
 }
 function gotQR(k){
   const ai = aiOfKey(k);
-  if (!ai){ $('#scanMsg').textContent = 'That QR code isn’t a ChatGPT, Claude or Grok key.'; return; }
+  if (!ai){ $('#scanMsg').textContent = 'That QR code isn’t a ChatGPT, Claude, Grok or Gemini key.'; return; }
   scan.found = { k, ai };
   $('#scanWhat').textContent = `${AI_NAME[ai]} key found`;
   $('#scanMasked').textContent = maskKey(k);

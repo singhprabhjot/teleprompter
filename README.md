@@ -33,7 +33,7 @@ To run it locally instead, double-click `Start Teleprompter.command` (serves it 
 **Mock interview** (sidebar → + Ask a question): ask a question out loud; after a short silence it goes to
 ChatGPT, and the answer opens as cheat notes (middle: labelled sections of short bullets) beside the full answer to read (right). The switch in the top
 bar decides what the microphone is for: **Question**, **Answer** (the reading) or **Auto** (question → reading →
-next question). **Notes only** hides the full text so he speaks from the notes. Answers come from **ChatGPT, Claude or Grok** (⚙︎ Settings → Mock interview → Answers come from); each keeps its
+next question). **Notes only** hides the full text so he speaks from the notes. Answers come from **ChatGPT, Claude, Grok or Gemini** (⚙︎ Settings → Mock interview → Answers come from); each keeps its
 own API key in that browser. Claude runs on Claude Opus 5.5 through Anthropic's SDK. **Scan QR** fills a key from a QR
 code: on a computer, paste the key and tap **Show as QR code**, then scan it with the iPad. The context box is sent with
 every question.
@@ -48,3 +48,8 @@ ChatGPT note: OpenAI streams gpt-5 and gpt-5-mini only for an organization it ha
 (platform.openai.com → Settings → Organization → Verify). On any other key, streamed answers come from gpt-4.1-mini,
 which streams without it; the app tries gpt-5-mini again every 12 hours, or when you tap Test. Under the setting,
 Settings shows which model wrote the last answer and how soon its first words were on screen.
+
+**Gemini** uses the newest Gemini Flash on your key (get one at aistudio.google.com → Get API key; a Gemini key
+starts with AIza, so Scan QR recognises it). Flash is quick when it hardly thinks first, so the app asks for the least
+thinking each model accepts and remembers it. It streams on any key, verified or not. Free keys allow only a few
+questions a minute.
