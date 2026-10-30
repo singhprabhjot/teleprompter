@@ -49,7 +49,7 @@ ChatGPT note: OpenAI streams gpt-5 and gpt-5-mini only for an organization it ha
 which streams without it; the app tries gpt-5-mini again every 12 hours, or when you tap Test. Under the setting,
 Settings shows which model wrote the last answer and how soon its first words were on screen.
 
-**Gemini** uses the newest Gemini Flash on your key (get one at aistudio.google.com → Get API key; a Gemini key
-starts with AIza, so Scan QR recognises it). Flash is quick when it hardly thinks first, so the app asks for the least
+**Gemini** uses the newest Gemini Flash on your key (get one at aistudio.google.com → Get API key; new Gemini keys
+start with AQ., older ones with AIza, and both are recognised: pasting one switches to Gemini by itself). Flash is quick when it hardly thinks first, so the app asks for the least
 thinking each model accepts and remembers it. It streams on any key, verified or not. Free keys allow only a few
 questions a minute.
