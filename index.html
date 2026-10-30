@@ -1280,7 +1280,7 @@ async function submitQuestion(text){
   if (toWords(q).length < 2) return;                      // a cough or one stray word: keep listening
   mi.q = q;
   if (!keyOf(S.ai) && !fakeGPT && !fakeStream){ mi.err = 'nokey'; setMi('ask'); return; }
-  mi.err = ''; setMi('thinking');
+  mi.err = ''; mi.thinkingAt = Date.now(); setMi('thinking');
   gptCtrl?.abort();
   const ctrl = gptCtrl = new AbortController();
   if (S.miStream && (fakeStream || !fakeGPT)) return streamQuestion(q, ctrl);
@@ -1814,23 +1814,43 @@ async function geminiModels(signal){
   if (chosen('gemini')) return [chosen('gemini')];   // a model you picked: only that one
   const first = await pickModel('gemini', signal);
   if (!gemFlash){ try { gemFlash = flashList(await listModels('gemini', signal)); } catch { gemFlash = []; } }
-  return [first, ...gemFlash.filter(m => m !== first)].slice(0, 4);
+  const all = [first, ...gemFlash.filter(m => m !== first)].slice(0, 4);
+  const quick = all.filter(m => !isSlow(m));          // one that was too slow lately waits its turn
+  return quick.length ? quick.concat(all.filter(isSlow)) : all;
 }
-async function geminiCall(sys, q, signal, stream){
+// Automatic gives a model this long for its first words (the whole answer when not streaming), then moves on
+const GEM_WAIT = { stream:6000, whole:20000 }, SLOW_FOR = 12 * 3600e3;
+const isSlow = m => S.slow && S.slow[m] && Date.now() - S.slow[m] < SLOW_FOR;
+// consume(r, started) reads the reply; it calls started() at the first words
+async function geminiCall(sys, q, signal, stream, consume){
+  const manual = !!chosen('gemini');
   const models = await geminiModels(signal);
   let firstErr = null;
   for (const model of models){
+    const ctl = new AbortController(), stop = () => ctl.abort();
+    if (signal) signal.addEventListener('abort', stop);
+    let started = false, late = false;
+    const wait = stream ? GEM_WAIT.stream : GEM_WAIT.whole;
+    const timer = manual ? 0 : setTimeout(() => { if (!started){ late = true; ctl.abort(); } }, wait);   // a model you picked waits as long as it takes
     try {
-      const r = await geminiRequest(model, sys, q, signal, stream, !stream);
+      const r = await geminiRequest(model, sys, q, ctl.signal, stream, !stream);
       lastStream = { model, streamed:stream };
+      const out = await consume(r, () => { started = true; });
       if (firstErr){   // an older Flash answered: use it from now on, and say why once
         S.models.gemini = model; saveSettings();
-        toast(`Gemini: answering with ${model}. ${models[0]} didn’t answer on this key (${(firstErr.raw || firstErr.message).slice(0, 120)}).`, 9000);
+        toast(`Gemini: answering with ${model}. ${models[0]} ${firstErr.status === 0 ? 'was too slow' : 'didn’t answer'} (${(firstErr.raw || firstErr.message).slice(0, 120)}).`, 9000);
       }
-      return { r, model };
+      return out;
     } catch (e){
-      if ((e && e.name === 'AbortError') || (e && e.keyProblem)) throw e;
+      if ((signal && signal.aborted) || started || (e && e.keyProblem)) throw e;   // cancelled, half-written, or the key
+      if (late){
+        S.slow = S.slow || {}; S.slow[model] = Date.now(); saveSettings();
+        e = Object.assign(new Error('too slow'), { raw:`no words after ${wait / 1000} seconds`, status:0 });
+      } else if (e && e.name === 'AbortError') throw e;
       firstErr = firstErr || e;
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', stop);
     }
   }
   if (firstErr && firstErr.status && firstErr.status !== 429) throw new Error(`Gemini said: ${firstErr.raw || firstErr.message} (error ${firstErr.status})`);
@@ -1884,13 +1904,10 @@ function geminiText(j){
   return t;
 }
 async function askGemini(sys, q, signal){
-  const { r } = await geminiCall(sys, q, signal, false);
-  return normAnswer(geminiText(await r.json().catch(() => ({}))));
+  return geminiCall(sys, q, signal, false, async r => normAnswer(geminiText(await r.json())));
 }
 async function streamGemini(sys, q, signal, onText){
-  const { r, model } = await geminiCall(sys, q, signal, true);
-  lastStream = { model, streamed:true };
-  return readSSE(r, onText, geminiText);
+  return geminiCall(sys, q, signal, true, (r, started) => readSSE(r, t => { started(); onText(t); }, geminiText));
 }
 
 /* the cheat notes: labelled sections of short bullets. Beside the full answer, the sections of the paragraph being read
@@ -1964,6 +1981,12 @@ setInterval(() => {
 }, 400);
 
 /* the ask screen and the status line */
+// how long it has been waiting for the AI, on the waiting screen
+function tickWait(){
+  const el = document.getElementById('akTime');
+  if (el && mi.thinkingAt) el.textContent = `Waiting ${Math.floor((Date.now() - mi.thinkingAt) / 1000)} s…`;
+}
+setInterval(() => { if (mi.on && mi.view === 'thinking') tickWait(); }, 500);
 const fmtSec = v => `${(+v || 1.5).toString()} second${(+v || 1.5) === 1 ? '' : 's'}`;
 function renderAsk(){
   if (!mi.on || mi.view === 'answer') return;
@@ -1973,6 +1996,7 @@ function renderAsk(){
   if (mi.view === 'thinking'){
     icon.className = 'akIcon spin'; lab.textContent = 'Getting the answer from ' + AI_NAME[S.ai];
     txt.textContent = mi.q; hint.textContent = S.miStream ? 'Streaming is on: the answer shows up as soon as its first words are written.' : 'Usually 2 to 5 seconds. It writes short points and the full answer together.';
+    const sec = document.createElement('span'); sec.id = 'akTime'; hint.append(' ', sec); tickWait();
     btn('Cancel', cancelAsk);
     return;
   }
@@ -2081,7 +2105,7 @@ async function testKey(){
     let what;
     // Claude: counting the tokens of a word checks the key and the model, and costs nothing
     if (ai === 'claude'){ const c = await claudeClient(); await c.messages.countTokens({ model:CLAUDE_MODEL, messages:[{ role:'user', content:'Hello' }] }); what = 'Claude Opus 5.5'; }
-    else { S.models = { ...(S.models || {}), [ai]:'' }; S.noStream = {}; saveSettings(); what = await pickModel(ai); }
+    else { S.models = { ...(S.models || {}), [ai]:'' }; S.noStream = {}; S.slow = {}; saveSettings(); what = await pickModel(ai); }
     st.textContent = `✓ Working (${what}) · it stays on this device`; st.className = 'gstat ok';
     fillModels(true);
   } catch (err){
